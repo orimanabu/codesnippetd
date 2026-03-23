@@ -263,6 +263,38 @@ func newHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(snippets)
 	})
+	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+		tagName := r.PathValue("name")
+		context := r.URL.Query().Get("context")
+		tagsPath := tagsFileForContext(context)
+
+		results, err := lookupTag(tagsPath, tagName)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+			} else {
+				http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		if len(results) == 0 {
+			http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+			return
+		}
+
+		var ranges []LineRange
+		for _, tag := range results {
+			lr, err := lineRangeForTag(tag)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			ranges = append(ranges, lr)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ranges)
+	})
 	return accessLog(mux)
 }
 
@@ -1090,6 +1122,290 @@ func TestSnippetHandler_CodeBoundaries(t *testing.T) {
 		// Must not include helperFunc which starts at line 24
 		if strings.Contains(s.Code, "func helperFunc") {
 			t.Errorf("Code should not extend past end line, got %q", s.Code)
+		}
+	})
+}
+
+// ---- lineRangeForTag tests ----
+
+func TestLineRangeForTag_WithLineAndEndField(t *testing.T) {
+	src := "package p\n\nfunc Greet() {\n\treturn\n}\n\nvar x = 1\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:  "Greet",
+		Path:  path,
+		Line:  3,
+		Extra: map[string]string{"end": "5"},
+	}
+	lr, err := lineRangeForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lr.Start != 3 {
+		t.Errorf("Start: got %d, want 3", lr.Start)
+	}
+	if lr.End != 5 {
+		t.Errorf("End: got %d, want 5", lr.End)
+	}
+	if lr.Name != "Greet" {
+		t.Errorf("Name: got %q, want Greet", lr.Name)
+	}
+	if lr.Path != path {
+		t.Errorf("Path: got %q, want %q", lr.Path, path)
+	}
+}
+
+func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
+	src := "package p\n\nfunc Hello() {\n}\n\nvar y = 2\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:    "Hello",
+		Path:    path,
+		Pattern: "^func Hello() {$",
+		Extra:   map[string]string{"end": "4"},
+	}
+	lr, err := lineRangeForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lr.Start != 3 {
+		t.Errorf("Start: got %d, want 3", lr.Start)
+	}
+	if lr.End != 4 {
+		t.Errorf("End: got %d, want 4", lr.End)
+	}
+}
+
+func TestLineRangeForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
+	src := "line1\nfunc Foo() {\n\treturn\n}\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:  "Foo",
+		Path:  path,
+		Line:  2,
+		Extra: map[string]string{},
+	}
+	lr, err := lineRangeForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lr.Start != 2 {
+		t.Errorf("Start: got %d, want 2", lr.Start)
+	}
+	if lr.End == 0 {
+		t.Error("End should not be 0 when defaulting to EOF")
+	}
+}
+
+func TestLineRangeForTag_FileNotFound(t *testing.T) {
+	tag := Tag{
+		Name:    "Foo",
+		Path:    "/nonexistent/path/src.go",
+		Pattern: "^func Foo() {$",
+		Extra:   map[string]string{},
+	}
+	_, err := lineRangeForTag(tag)
+	if err == nil {
+		t.Fatal("expected error for missing source file")
+	}
+}
+
+func TestLineRangeForTag_NoCodeField(t *testing.T) {
+	src := "package p\n\nfunc Bar() {\n\treturn\n}\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:  "Bar",
+		Path:  path,
+		Line:  3,
+		Extra: map[string]string{"end": "5"},
+	}
+	lr, err := lineRangeForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// LineRange must not contain a Code field
+	b, _ := json.Marshal(lr)
+	var m map[string]any
+	json.Unmarshal(b, &m)
+	if _, ok := m["code"]; ok {
+		t.Error("LineRange JSON must not contain a 'code' field")
+	}
+}
+
+// ---- GET /lines/{name} handler tests ----
+
+func TestLinesHandler_ReturnsJSON(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("Content-Type: got %q, want application/json", ct)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(ranges))
+		}
+	})
+}
+
+func TestLinesHandler_LineRangeFields(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		lr := ranges[0]
+
+		if lr.Name != "NewMyStruct" {
+			t.Errorf("Name: got %q, want NewMyStruct", lr.Name)
+		}
+		if lr.Start != 11 {
+			t.Errorf("Start: got %d, want 11", lr.Start)
+		}
+		if lr.End != 13 {
+			t.Errorf("End: got %d, want 13", lr.End)
+		}
+	})
+}
+
+func TestLinesHandler_NoCodeField(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var raw []map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if _, ok := raw[0]["code"]; ok {
+			t.Error("response must not contain a 'code' field")
+		}
+	})
+}
+
+func TestLinesHandler_MultipleRanges(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/overloaded")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 2 {
+			t.Fatalf("expected 2 entries for overloaded, got %d", len(ranges))
+		}
+		paths := map[string]bool{}
+		for _, lr := range ranges {
+			paths[lr.Path] = true
+		}
+		if !paths["sample.go"] || !paths["other.go"] {
+			t.Errorf("expected entries from sample.go and other.go, got: %v", paths)
+		}
+	})
+}
+
+func TestLinesHandler_TagNotFound(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/NonExistent")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
+}
+
+func TestLinesHandler_TagsFileNotFound(t *testing.T) {
+	withCwd(t, t.TempDir(), func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/anything")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
+}
+
+func TestLinesHandler_ContextQueryParam(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/SubFunc?context=sub")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(ranges))
+		}
+		if ranges[0].Start != 3 || ranges[0].End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 3/4", ranges[0].Start, ranges[0].End)
 		}
 	})
 }

@@ -2899,3 +2899,659 @@ rnにマッチする行)から、endの行までのコードスニペットを�
   - ## Snippet Object セクション — name/path/start/end/code フィールドの説明
   - Tag File Resolution セクション — readtags の利用対象に /snippets/{name} を追記
 ```
+
+```
+❯ `/lines/{name}`のエンドポイントを新規に作成してください。このエンドポイントがコールされると、tagsファイルを読んで、`/tags/{name}`を呼んだときのpathで指定されたファイルのpattern
+にマッチする行と、endの行を返します
+
+⏺ /snippets/{name} との違いは、コード本文ではなく 開始行番号と終了行番号だけを返す エンドポイントですね。実装します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ snippetForTag との共通ロジック（start/end の解決）を関数に切り出しつつ、LineRange 型とハンドラーを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 8 lines
+      237    Code  string `json:"code"`
+      238  }
+      239
+      240 +// LineRange represents the start and end line numbers of a tag in its source file.
+      241 +type LineRange struct {
+      242 +  Name  string `json:"name"`
+      243 +  Path  string `json:"path"`
+      244 +  Start int    `json:"start"`
+      245 +  End   int    `json:"end"`
+      246 +}
+      247 +
+      248  // normalizeTagPattern strips ctags regex anchors (^ prefix, $ suffix) and
+      249  // unescapes common regex metacharacters so the result can be used with
+      250  // strings.Contains for line matching.
+
+⏺ 次に snippetForTag の直後に lineRangeForTag を追加します。start/end の解決ロジックを共有するため、内部ヘルパー resolveLineRange を切り出します。
+
+⏺ Update(main.go)
+  ⎿  Added 55 lines, removed 11 lines
+      278    return strings.Join(lines[start-1:end], "\n")
+      279  }
+      280
+      281 -// snippetForTag resolves a Snippet from a Tag by reading the source file.
+      282 -func snippetForTag(tag Tag) (Snippet, error) {
+      283 -  data, err := os.ReadFile(tag.Path)
+      284 -  if err != nil {
+      285 -    return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
+      281 +// resolveStartEnd returns the start and end line numbers for a Tag.
+      282 +// The source file is read only when pattern matching is needed (tag.Line == 0).
+      283 +// If the "end" extension field is absent, endLine defaults to the total line count of the file.
+      284 +func resolveStartEnd(tag Tag) (startLine, endLine int, err error) {
+      285 +  needFile := tag.Line == 0 && tag.Pattern != ""
+      286 +
+      287 +  var lines []string
+      288 +  if needFile {
+      289 +    data, readErr := os.ReadFile(tag.Path)
+      290 +    if readErr != nil {
+      291 +      return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+      292 +    }
+      293 +    lines = strings.Split(string(data), "\n")
+      294    }
+      287 -  lines := strings.Split(string(data), "\n")
+      295
+      289 -  // Determine start line from line number or pattern match.
+      290 -  startLine := tag.Line
+      296 +  startLine = tag.Line
+      297    if startLine == 0 && tag.Pattern != "" {
+      298      startLine = findPatternLine(lines, tag.Pattern)
+      299    }
+      300    if startLine <= 0 {
+      295 -    return Snippet{}, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
+      301 +    return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
+      302    }
+      303
+      298 -  // Determine end line from the "end" extension field, defaulting to EOF.
+      299 -  endLine := len(lines)
+      304    if endStr, ok := tag.Extra["end"]; ok {
+      305      if n, err := strconv.Atoi(endStr); err == nil {
+      306        endLine = n
+      307 +      return startLine, endLine, nil
+      308      }
+      309    }
+      310
+      311 +  // end field absent: fall back to EOF, reading the file if not already read.
+      312 +  if lines == nil {
+      313 +    data, readErr := os.ReadFile(tag.Path)
+      314 +    if readErr != nil {
+      315 +      return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+      316 +    }
+      317 +    lines = strings.Split(string(data), "\n")
+      318 +  }
+      319 +  return startLine, len(lines), nil
+      320 +}
+      321 +
+      322 +// snippetForTag resolves a Snippet from a Tag by reading the source file.
+      323 +func snippetForTag(tag Tag) (Snippet, error) {
+      324 +  data, err := os.ReadFile(tag.Path)
+      325 +  if err != nil {
+      326 +    return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
+      327 +  }
+      328 +  lines := strings.Split(string(data), "\n")
+      329 +
+      330 +  startLine, endLine, err := resolveStartEnd(tag)
+      331 +  if err != nil {
+      332 +    return Snippet{}, err
+      333 +  }
+      334 +
+      335    return Snippet{
+      336      Name:  tag.Name,
+      337      Path:  tag.Path,
+     ...
+      341    }, nil
+      342  }
+      343
+      344 +// lineRangeForTag resolves the start and end line numbers for a Tag without reading
+      345 +// the full file content (the file is read only when pattern matching is needed).
+      346 +func lineRangeForTag(tag Tag) (LineRange, error) {
+      347 +  startLine, endLine, err := resolveStartEnd(tag)
+      348 +  if err != nil {
+      349 +    return LineRange{}, err
+      350 +  }
+      351 +  return LineRange{
+      352 +    Name:  tag.Name,
+      353 +    Path:  tag.Path,
+      354 +    Start: startLine,
+      355 +    End:   endLine,
+      356 +  }, nil
+      357 +}
+      358 +
+      359  func main() {
+      360    addr := flag.String("addr", ":8080", "listen address")
+      361    flag.Parse()
+
+⏺ snippetForTag がファイルを二重に読む問題があります。修正します。
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 5 lines
+      321
+      322  // snippetForTag resolves a Snippet from a Tag by reading the source file.
+      323  func snippetForTag(tag Tag) (Snippet, error) {
+      324 +  startLine, endLine, err := resolveStartEnd(tag)
+      325 +  if err != nil {
+      326 +    return Snippet{}, err
+      327 +  }
+      328 +
+      329    data, err := os.ReadFile(tag.Path)
+      330    if err != nil {
+      331      return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
+      332    }
+      333    lines := strings.Split(string(data), "\n")
+      334
+      330 -  startLine, endLine, err := resolveStartEnd(tag)
+      331 -  if err != nil {
+      332 -    return Snippet{}, err
+      333 -  }
+      334 -
+      335    return Snippet{
+      336      Name:  tag.Name,
+      337      Path:  tag.Path,
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ ハンドラーを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 36 lines
+      455      }
+      456    })
+      457
+      458 +  mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      459 +    tagName := r.PathValue("name")
+      460 +    context := r.URL.Query().Get("context")
+      461 +    tagsPath := tagsFileForContext(context)
+      462 +
+      463 +    results, err := lookupTag(tagsPath, tagName)
+      464 +    if err != nil {
+      465 +      if errors.Is(err, os.ErrNotExist) {
+      466 +        http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      467 +      } else {
+      468 +        http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+      469 +      }
+      470 +      return
+      471 +    }
+      472 +
+      473 +    if len(results) == 0 {
+      474 +      http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+      475 +      return
+      476 +    }
+      477 +
+      478 +    var ranges []LineRange
+      479 +    for _, tag := range results {
+      480 +      lr, err := lineRangeForTag(tag)
+      481 +      if err != nil {
+      482 +        http.Error(w, err.Error(), http.StatusInternalServerError)
+      483 +        return
+      484 +      }
+      485 +      ranges = append(ranges, lr)
+      486 +    }
+      487 +
+      488 +    w.Header().Set("Content-Type", "application/json")
+      489 +    if err := json.NewEncoder(w).Encode(ranges); err != nil {
+      490 +      log.Printf("encoding response: %v", err)
+      491 +    }
+      492 +  })
+      493 +
+      494    log.Printf("listening on %s", *addr)
+      495    if err := http.ListenAndServe(*addr, accessLog(mux)); err != nil {
+      496      log.Fatalf("server error: %v", err)
+
+⏺ Bash(go build ./... && go test . 2>&1 | tail -5)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.650s
+
+⏺ テストが通ったので、テストコードと README を追加します。
+
+  まず newHandler() にハンドラーを追加し、テストを書きます。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 32 lines
+      263      w.Header().Set("Content-Type", "application/json")
+      264      json.NewEncoder(w).Encode(snippets)
+      265    })
+      266 +  mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      267 +    tagName := r.PathValue("name")
+      268 +    context := r.URL.Query().Get("context")
+      269 +    tagsPath := tagsFileForContext(context)
+      270 +
+      271 +    results, err := lookupTag(tagsPath, tagName)
+      272 +    if err != nil {
+      273 +      if errors.Is(err, os.ErrNotExist) {
+      274 +        http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+      275 +      } else {
+      276 +        http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+      277 +      }
+      278 +      return
+      279 +    }
+      280 +    if len(results) == 0 {
+      281 +      http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+      282 +      return
+      283 +    }
+      284 +
+      285 +    var ranges []LineRange
+      286 +    for _, tag := range results {
+      287 +      lr, err := lineRangeForTag(tag)
+      288 +      if err != nil {
+      289 +        http.Error(w, err.Error(), http.StatusInternalServerError)
+      290 +        return
+      291 +      }
+      292 +      ranges = append(ranges, lr)
+      293 +    }
+      294 +
+      295 +    w.Header().Set("Content-Type", "application/json")
+      296 +    json.NewEncoder(w).Encode(ranges)
+      297 +  })
+      298    return accessLog(mux)
+      299  }
+      300
+
+⏺ テストを追加します。// ---- MarshalJSON tests ---- の直前に挿入します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+  ⎿  Found 8 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 284 lines
+      1126    })
+      1127  }
+      1128
+      1129 +// ---- lineRangeForTag tests ----
+      1130 +
+      1131 +func TestLineRangeForTag_WithLineAndEndField(t *testing.T) {
+      1132 +  src := "package p\n\nfunc Greet() {\n\treturn\n}\n\nvar x = 1\n"
+      1133 +  path := writeTemp(t, src)
+      1134 +
+      1135 +  tag := Tag{
+      1136 +    Name:  "Greet",
+      1137 +    Path:  path,
+      1138 +    Line:  3,
+      1139 +    Extra: map[string]string{"end": "5"},
+      1140 +  }
+      1141 +  lr, err := lineRangeForTag(tag)
+      1142 +  if err != nil {
+      1143 +    t.Fatal(err)
+      1144 +  }
+      1145 +  if lr.Start != 3 {
+      1146 +    t.Errorf("Start: got %d, want 3", lr.Start)
+      1147 +  }
+      1148 +  if lr.End != 5 {
+      1149 +    t.Errorf("End: got %d, want 5", lr.End)
+      1150 +  }
+      1151 +  if lr.Name != "Greet" {
+      1152 +    t.Errorf("Name: got %q, want Greet", lr.Name)
+      1153 +  }
+      1154 +  if lr.Path != path {
+      1155 +    t.Errorf("Path: got %q, want %q", lr.Path, path)
+      1156 +  }
+      1157 +}
+      1158 +
+      1159 +func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
+      1160 +  src := "package p\n\nfunc Hello() {\n}\n\nvar y = 2\n"
+      1161 +  path := writeTemp(t, src)
+      1162 +
+      1163 +  tag := Tag{
+      1164 +    Name:    "Hello",
+      1165 +    Path:    path,
+      1166 +    Pattern: "^func Hello() {$",
+      1167 +    Extra:   map[string]string{"end": "4"},
+      1168 +  }
+      1169 +  lr, err := lineRangeForTag(tag)
+      1170 +  if err != nil {
+      1171 +    t.Fatal(err)
+      1172 +  }
+      1173 +  if lr.Start != 3 {
+      1174 +    t.Errorf("Start: got %d, want 3", lr.Start)
+      1175 +  }
+      1176 +  if lr.End != 4 {
+      1177 +    t.Errorf("End: got %d, want 4", lr.End)
+      1178 +  }
+      1179 +}
+      1180 +
+      1181 +func TestLineRangeForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
+      1182 +  src := "line1\nfunc Foo() {\n\treturn\n}\n"
+      1183 +  path := writeTemp(t, src)
+      1184 +
+      1185 +  tag := Tag{
+      1186 +    Name:  "Foo",
+      1187 +    Path:  path,
+      1188 +    Line:  2,
+      1189 +    Extra: map[string]string{},
+      1190 +  }
+      1191 +  lr, err := lineRangeForTag(tag)
+      1192 +  if err != nil {
+      1193 +    t.Fatal(err)
+      1194 +  }
+      1195 +  if lr.Start != 2 {
+      1196 +    t.Errorf("Start: got %d, want 2", lr.Start)
+      1197 +  }
+      1198 +  if lr.End == 0 {
+      1199 +    t.Error("End should not be 0 when defaulting to EOF")
+      1200 +  }
+      1201 +}
+      1202 +
+      1203 +func TestLineRangeForTag_FileNotFound(t *testing.T) {
+      1204 +  tag := Tag{
+      1205 +    Name:    "Foo",
+      1206 +    Path:    "/nonexistent/path/src.go",
+      1207 +    Pattern: "^func Foo() {$",
+      1208 +    Extra:   map[string]string{},
+      1209 +  }
+      1210 +  _, err := lineRangeForTag(tag)
+      1211 +  if err == nil {
+      1212 +    t.Fatal("expected error for missing source file")
+      1213 +  }
+      1214 +}
+      1215 +
+      1216 +func TestLineRangeForTag_NoCodeField(t *testing.T) {
+      1217 +  src := "package p\n\nfunc Bar() {\n\treturn\n}\n"
+      1218 +  path := writeTemp(t, src)
+      1219 +
+      1220 +  tag := Tag{
+      1221 +    Name:  "Bar",
+      1222 +    Path:  path,
+      1223 +    Line:  3,
+      1224 +    Extra: map[string]string{"end": "5"},
+      1225 +  }
+      1226 +  lr, err := lineRangeForTag(tag)
+      1227 +  if err != nil {
+      1228 +    t.Fatal(err)
+      1229 +  }
+      1230 +  // LineRange must not contain a Code field
+      1231 +  b, _ := json.Marshal(lr)
+      1232 +  var m map[string]any
+      1233 +  json.Unmarshal(b, &m)
+      1234 +  if _, ok := m["code"]; ok {
+      1235 +    t.Error("LineRange JSON must not contain a 'code' field")
+      1236 +  }
+      1237 +}
+      1238 +
+      1239 +// ---- GET /lines/{name} handler tests ----
+      1240 +
+      1241 +func TestLinesHandler_ReturnsJSON(t *testing.T) {
+      1242 +  withCwd(t, "testdata", func() {
+      1243 +    srv := httptest.NewServer(newHandler())
+      1244 +    defer srv.Close()
+      1245 +
+      1246 +    resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+      1247 +    if err != nil {
+      1248 +      t.Fatal(err)
+      1249 +    }
+      1250 +    defer resp.Body.Close()
+      1251 +
+      1252 +    if resp.StatusCode != http.StatusOK {
+      1253 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1254 +    }
+      1255 +    if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+      1256 +      t.Errorf("Content-Type: got %q, want application/json", ct)
+      1257 +    }
+      1258 +
+      1259 +    var ranges []LineRange
+      1260 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1261 +      t.Fatalf("decode: %v", err)
+      1262 +    }
+      1263 +    if len(ranges) != 1 {
+      1264 +      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1265 +    }
+      1266 +  })
+      1267 +}
+      1268 +
+      1269 +func TestLinesHandler_LineRangeFields(t *testing.T) {
+      1270 +  withCwd(t, "testdata", func() {
+      1271 +    srv := httptest.NewServer(newHandler())
+      1272 +    defer srv.Close()
+      1273 +
+      1274 +    resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+      1275 +    if err != nil {
+      1276 +      t.Fatal(err)
+      1277 +    }
+      1278 +    defer resp.Body.Close()
+      1279 +
+      1280 +    var ranges []LineRange
+      1281 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1282 +      t.Fatalf("decode: %v", err)
+      1283 +    }
+      1284 +    lr := ranges[0]
+      1285 +
+      1286 +    if lr.Name != "NewMyStruct" {
+      1287 +      t.Errorf("Name: got %q, want NewMyStruct", lr.Name)
+      1288 +    }
+      1289 +    if lr.Start != 11 {
+      1290 +      t.Errorf("Start: got %d, want 11", lr.Start)
+      1291 +    }
+      1292 +    if lr.End != 13 {
+      1293 +      t.Errorf("End: got %d, want 13", lr.End)
+      1294 +    }
+      1295 +  })
+      1296 +}
+      1297 +
+      1298 +func TestLinesHandler_NoCodeField(t *testing.T) {
+      1299 +  withCwd(t, "testdata", func() {
+      1300 +    srv := httptest.NewServer(newHandler())
+      1301 +    defer srv.Close()
+      1302 +
+      1303 +    resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+      1304 +    if err != nil {
+      1305 +      t.Fatal(err)
+      1306 +    }
+      1307 +    defer resp.Body.Close()
+      1308 +
+      1309 +    var raw []map[string]any
+      1310 +    if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+      1311 +      t.Fatalf("decode: %v", err)
+      1312 +    }
+      1313 +    if _, ok := raw[0]["code"]; ok {
+      1314 +      t.Error("response must not contain a 'code' field")
+      1315 +    }
+      1316 +  })
+      1317 +}
+      1318 +
+      1319 +func TestLinesHandler_MultipleRanges(t *testing.T) {
+      1320 +  withCwd(t, "testdata", func() {
+      1321 +    srv := httptest.NewServer(newHandler())
+      1322 +    defer srv.Close()
+      1323 +
+      1324 +    resp, err := http.Get(srv.URL + "/lines/overloaded")
+      1325 +    if err != nil {
+      1326 +      t.Fatal(err)
+      1327 +    }
+      1328 +    defer resp.Body.Close()
+      1329 +
+      1330 +    if resp.StatusCode != http.StatusOK {
+      1331 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1332 +    }
+      1333 +
+      1334 +    var ranges []LineRange
+      1335 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1336 +      t.Fatalf("decode: %v", err)
+      1337 +    }
+      1338 +    if len(ranges) != 2 {
+      1339 +      t.Fatalf("expected 2 entries for overloaded, got %d", len(ranges))
+      1340 +    }
+      1341 +    paths := map[string]bool{}
+      1342 +    for _, lr := range ranges {
+      1343 +      paths[lr.Path] = true
+      1344 +    }
+      1345 +    if !paths["sample.go"] || !paths["other.go"] {
+      1346 +      t.Errorf("expected entries from sample.go and other.go, got: %v", paths)
+      1347 +    }
+      1348 +  })
+      1349 +}
+      1350 +
+      1351 +func TestLinesHandler_TagNotFound(t *testing.T) {
+      1352 +  withCwd(t, "testdata", func() {
+      1353 +    srv := httptest.NewServer(newHandler())
+      1354 +    defer srv.Close()
+      1355 +
+      1356 +    resp, err := http.Get(srv.URL + "/lines/NonExistent")
+      1357 +    if err != nil {
+      1358 +      t.Fatal(err)
+      1359 +    }
+      1360 +    defer resp.Body.Close()
+      1361 +
+      1362 +    if resp.StatusCode != http.StatusNotFound {
+      1363 +      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      1364 +    }
+      1365 +  })
+      1366 +}
+      1367 +
+      1368 +func TestLinesHandler_TagsFileNotFound(t *testing.T) {
+      1369 +  withCwd(t, t.TempDir(), func() {
+      1370 +    srv := httptest.NewServer(newHandler())
+      1371 +    defer srv.Close()
+      1372 +
+      1373 +    resp, err := http.Get(srv.URL + "/lines/anything")
+      1374 +    if err != nil {
+      1375 +      t.Fatal(err)
+      1376 +    }
+      1377 +    defer resp.Body.Close()
+      1378 +
+      1379 +    if resp.StatusCode != http.StatusNotFound {
+      1380 +      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      1381 +    }
+      1382 +  })
+      1383 +}
+      1384 +
+      1385 +func TestLinesHandler_ContextQueryParam(t *testing.T) {
+      1386 +  withCwd(t, "testdata", func() {
+      1387 +    srv := httptest.NewServer(newHandler())
+      1388 +    defer srv.Close()
+      1389 +
+      1390 +    resp, err := http.Get(srv.URL + "/lines/SubFunc?context=sub")
+      1391 +    if err != nil {
+      1392 +      t.Fatal(err)
+      1393 +    }
+      1394 +    defer resp.Body.Close()
+      1395 +
+      1396 +    if resp.StatusCode != http.StatusOK {
+      1397 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1398 +    }
+      1399 +
+      1400 +    var ranges []LineRange
+      1401 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1402 +      t.Fatalf("decode: %v", err)
+      1403 +    }
+      1404 +    if len(ranges) != 1 {
+      1405 +      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1406 +    }
+      1407 +    if ranges[0].Start != 3 || ranges[0].End != 4 {
+      1408 +      t.Errorf("Start/End: got %d/%d, want 3/4", ranges[0].Start, ranges[0].End)
+      1409 +    }
+      1410 +  })
+      1411 +}
+      1412 +
+      1413  // ---- MarshalJSON tests ----
+      1414
+      1415  func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+
+⏺ Bash(go test . -v 2>&1 | grep -E "^(=== RUN|--- (PASS|FAIL|SKIP)|FAIL|ok)")
+  ⎿  === RUN   TestParseLine_SkipsMetadataLines
+     --- PASS: TestParseLine_SkipsMetadataLines (0.00s)
+     === RUN   TestParseLine_BasicFunction
+     … +44 lines (ctrl+o to expand)
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ 全テスト PASS。最後に README を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 60 lines
+      184
+      185  ---
+      186
+      187 +### Get Line Range by Tag Name
+      188 +
+      189 +```
+      190 +GET /lines/{name}
+      191 +```
+      192 +
+      193 +Returns the start and end line numbers for all tags matching the given name, without the source code content.
+      194 +The end line is taken from the ctags `end` extension field; if absent, it defaults to the total line count of the file.
+      195 +
+      196 +**Path Parameters**
+      197 +
+      198 +| Parameter | Description |
+      199 +|-----------|-------------|
+      200 +| `name` | Tag name to search for |
+      201 +
+      202 +**Query Parameters**
+      203 +
+      204 +| Parameter | Required | Description |
+      205 +|-----------|----------|-------------|
+      206 +| `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+      207 +
+      208 +**Responses**
+      209 +
+      210 +| Status | Description |
+      211 +|--------|-------------|
+      212 +| `200 OK` | JSON array of line range objects |
+      213 +| `404 Not Found` | Tag not found, or tags file does not exist |
+      214 +| `500 Internal Server Error` | Failed to look up the tag or read the source file |
+      215 +
+      216 +**Example**
+      217 +
+      218 +```
+      219 +GET /lines/MyFunc
+      220 +GET /lines/MyFunc?context=myproject
+      221 +```
+      222 +
+      223 +```json
+      224 +[
+      225 +  {
+      226 +    "name": "MyFunc",
+      227 +    "path": "main.go",
+      228 +    "start": 10,
+      229 +    "end": 15
+      230 +  }
+      231 +]
+      232 +```
+      233 +
+      234 +---
+      235 +
+      236 +## Line Range Object
+      237 +
+      238 +| Field | Type | Description |
+      239 +|-------|------|-------------|
+      240 +| `name` | string | Tag name |
+      241 +| `path` | string | Source file path |
+      242 +| `start` | number | Start line of the tag (1-based, inclusive) |
+      243 +| `end` | number | End line of the tag (1-based, inclusive) |
+      244 +
+      245 +---
+      246 +
+      247  ## Snippet Object
+      248
+      249  | Field | Type | Description |
+
+⏺ また、Tag File Resolution セクションの readtags 記述に /lines/{name} も追加します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      280  | *(not set)* | `./tags` |
+      281  | `sub/project` | `./sub/project/tags` |
+      282
+      283 -If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}` and `GET /snippets/{name}`); otherwise the tags file is parsed in
+          --memory.
+      283 +If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}`, `GET /snippets/{name}`, and `GET /lines/{name}`); otherwise the
+          +tags file is parsed in-memory.
+
+⏺ 完了です。実装の概要：
+
+  main.go の変更点:
+
+  - LineRange 型を追加（name/path/start/end、code フィールドなし）
+  - resolveStartEnd(tag) ヘルパーを追加 — snippetForTag と lineRangeForTag で共通の start/end 解決ロジック。tag.Line が設定済みかつ end フィールドがある場合はファイルを読まない
+  - lineRangeForTag(tag) を追加 — resolveStartEnd を呼ぶだけでファイル本文は不要
+  - GET /lines/{name} ハンドラーを追加
+
+  /lines/{name} レスポンスの特徴:
+  - /snippets/{name} と同じ start/end ロジック
+  - code フィールドを含まない（ファイル本文を読まないケースを最適化）
+
+  テスト (main_test.go): lineRangeForTag の単体テスト5件 + HTTP ハンドラーテスト7件を追加
+
+✻ Crunched for 2m 27s
+```

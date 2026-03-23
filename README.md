@@ -184,6 +184,66 @@ GET /snippets/MyFunc?context=myproject
 
 ---
 
+### Get Line Range by Tag Name
+
+```
+GET /lines/{name}
+```
+
+Returns the start and end line numbers for all tags matching the given name, without the source code content.
+The end line is taken from the ctags `end` extension field; if absent, it defaults to the total line count of the file.
+
+**Path Parameters**
+
+| Parameter | Description |
+|-----------|-------------|
+| `name` | Tag name to search for |
+
+**Query Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200 OK` | JSON array of line range objects |
+| `404 Not Found` | Tag not found, or tags file does not exist |
+| `500 Internal Server Error` | Failed to look up the tag or read the source file |
+
+**Example**
+
+```
+GET /lines/MyFunc
+GET /lines/MyFunc?context=myproject
+```
+
+```json
+[
+  {
+    "name": "MyFunc",
+    "path": "main.go",
+    "start": 10,
+    "end": 15
+  }
+]
+```
+
+---
+
+## Line Range Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Tag name |
+| `path` | string | Source file path |
+| `start` | number | Start line of the tag (1-based, inclusive) |
+| `end` | number | End line of the tag (1-based, inclusive) |
+
+---
+
 ## Snippet Object
 
 | Field | Type | Description |
@@ -220,4 +280,4 @@ The server resolves tags files relative to the working directory at startup:
 | *(not set)* | `./tags` |
 | `sub/project` | `./sub/project/tags` |
 
-If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}` and `GET /snippets/{name}`); otherwise the tags file is parsed in-memory.
+If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}`, `GET /snippets/{name}`, and `GET /lines/{name}`); otherwise the tags file is parsed in-memory.

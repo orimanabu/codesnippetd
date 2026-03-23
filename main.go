@@ -237,6 +237,14 @@ type Snippet struct {
 	Code  string `json:"code"`
 }
 
+// LineRange represents the start and end line numbers of a tag in its source file.
+type LineRange struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
 // normalizeTagPattern strips ctags regex anchors (^ prefix, $ suffix) and
 // unescapes common regex metacharacters so the result can be used with
 // strings.Contains for line matching.
@@ -270,30 +278,59 @@ func extractLines(lines []string, start, end int) string {
 	return strings.Join(lines[start-1:end], "\n")
 }
 
+// resolveStartEnd returns the start and end line numbers for a Tag.
+// The source file is read only when pattern matching is needed (tag.Line == 0).
+// If the "end" extension field is absent, endLine defaults to the total line count of the file.
+func resolveStartEnd(tag Tag) (startLine, endLine int, err error) {
+	needFile := tag.Line == 0 && tag.Pattern != ""
+
+	var lines []string
+	if needFile {
+		data, readErr := os.ReadFile(tag.Path)
+		if readErr != nil {
+			return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+		}
+		lines = strings.Split(string(data), "\n")
+	}
+
+	startLine = tag.Line
+	if startLine == 0 && tag.Pattern != "" {
+		startLine = findPatternLine(lines, tag.Pattern)
+	}
+	if startLine <= 0 {
+		return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
+	}
+
+	if endStr, ok := tag.Extra["end"]; ok {
+		if n, err := strconv.Atoi(endStr); err == nil {
+			endLine = n
+			return startLine, endLine, nil
+		}
+	}
+
+	// end field absent: fall back to EOF, reading the file if not already read.
+	if lines == nil {
+		data, readErr := os.ReadFile(tag.Path)
+		if readErr != nil {
+			return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+		}
+		lines = strings.Split(string(data), "\n")
+	}
+	return startLine, len(lines), nil
+}
+
 // snippetForTag resolves a Snippet from a Tag by reading the source file.
 func snippetForTag(tag Tag) (Snippet, error) {
+	startLine, endLine, err := resolveStartEnd(tag)
+	if err != nil {
+		return Snippet{}, err
+	}
+
 	data, err := os.ReadFile(tag.Path)
 	if err != nil {
 		return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
 	}
 	lines := strings.Split(string(data), "\n")
-
-	// Determine start line from line number or pattern match.
-	startLine := tag.Line
-	if startLine == 0 && tag.Pattern != "" {
-		startLine = findPatternLine(lines, tag.Pattern)
-	}
-	if startLine <= 0 {
-		return Snippet{}, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
-	}
-
-	// Determine end line from the "end" extension field, defaulting to EOF.
-	endLine := len(lines)
-	if endStr, ok := tag.Extra["end"]; ok {
-		if n, err := strconv.Atoi(endStr); err == nil {
-			endLine = n
-		}
-	}
 
 	return Snippet{
 		Name:  tag.Name,
@@ -301,6 +338,21 @@ func snippetForTag(tag Tag) (Snippet, error) {
 		Start: startLine,
 		End:   endLine,
 		Code:  extractLines(lines, startLine, endLine),
+	}, nil
+}
+
+// lineRangeForTag resolves the start and end line numbers for a Tag without reading
+// the full file content (the file is read only when pattern matching is needed).
+func lineRangeForTag(tag Tag) (LineRange, error) {
+	startLine, endLine, err := resolveStartEnd(tag)
+	if err != nil {
+		return LineRange{}, err
+	}
+	return LineRange{
+		Name:  tag.Name,
+		Path:  tag.Path,
+		Start: startLine,
+		End:   endLine,
 	}, nil
 }
 
@@ -399,6 +451,42 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(snippets); err != nil {
+			log.Printf("encoding response: %v", err)
+		}
+	})
+
+	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+		tagName := r.PathValue("name")
+		context := r.URL.Query().Get("context")
+		tagsPath := tagsFileForContext(context)
+
+		results, err := lookupTag(tagsPath, tagName)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+			} else {
+				http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		if len(results) == 0 {
+			http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+			return
+		}
+
+		var ranges []LineRange
+		for _, tag := range results {
+			lr, err := lineRangeForTag(tag)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			ranges = append(ranges, lr)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(ranges); err != nil {
 			log.Printf("encoding response: %v", err)
 		}
 	})
