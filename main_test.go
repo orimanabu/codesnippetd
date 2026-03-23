@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -210,7 +212,7 @@ func newHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(results)
 	})
-	return mux
+	return accessLog(mux)
 }
 
 func TestHandler_ReturnsTagJSON(t *testing.T) {
@@ -405,6 +407,64 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Errorf("status field: got %q, want %q", body["status"], "ok")
+	}
+}
+
+// ---- accessLog middleware tests ----
+
+// captureLog redirects the default logger to a buffer for the duration of fn.
+func captureLog(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	fn()
+	return buf.String()
+}
+
+func TestAccessLog_LogsMethodAndPath(t *testing.T) {
+	output := captureLog(t, func() {
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		newHandler().ServeHTTP(w, req)
+	})
+	if !strings.Contains(output, "GET") {
+		t.Errorf("log output missing method GET: %q", output)
+	}
+	if !strings.Contains(output, "/healthz") {
+		t.Errorf("log output missing path /healthz: %q", output)
+	}
+}
+
+func TestAccessLog_LogsStatusCode(t *testing.T) {
+	output := captureLog(t, func() {
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		newHandler().ServeHTTP(w, req)
+	})
+	if !strings.Contains(output, "200") {
+		t.Errorf("log output missing status 200: %q", output)
+	}
+}
+
+func TestAccessLog_LogsErrorStatusCode(t *testing.T) {
+	output := captureLog(t, func() {
+		req := httptest.NewRequest(http.MethodGet, "/tags/", nil)
+		w := httptest.NewRecorder()
+		newHandler().ServeHTTP(w, req)
+	})
+	if !strings.Contains(output, "400") {
+		t.Errorf("log output missing status 400: %q", output)
+	}
+}
+
+func TestAccessLog_PassesThroughResponse(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	newHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
 }
 

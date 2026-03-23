@@ -430,3 +430,193 @@ Ctagsで--output-format=jsonを指定したときと同じにしてください�
 Resume this session with:
 claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 ```
+
+```
+ ▐▛███▜▌   Claude Code v2.1.76
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
+
+❯ アクセスログを出力して。テストコードも書いてください
+
+⏺ Explore(Explore codebase structure)
+  ⎿  Done (12 tool uses · 27.2k tokens · 22s)
+  (ctrl+o to expand)
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ アクセスログミドルウェアを追加します。responseRecorder でステータスコードをキャプチャし、accessLog ミドルウェアでログ出力します。
+
+⏺ Update(main.go)
+  ⎿  Added 1 line
+      11    "path/filepath"
+      12    "strconv"
+      13    "strings"
+      14 +  "time"
+      15  )
+      16
+      17  // Tag represents a single ctags entry in Universal Ctags JSON output format.
+
+⏺ Update(main.go)
+  ⎿  Added 21 lines
+      54    return json.Marshal(m)
+      55  }
+      56
+      57 +// responseRecorder wraps http.ResponseWriter to capture the written status code.
+      58 +type responseRecorder struct {
+      59 +  http.ResponseWriter
+      60 +  status int
+      61 +}
+      62 +
+      63 +func (r *responseRecorder) WriteHeader(status int) {
+      64 +  r.status = status
+      65 +  r.ResponseWriter.WriteHeader(status)
+      66 +}
+      67 +
+      68 +// accessLog is middleware that logs each request's method, path, status code, and duration.
+      69 +func accessLog(next http.Handler) http.Handler {
+      70 +  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+      71 +    start := time.Now()
+      72 +    rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+      73 +    next.ServeHTTP(rec, r)
+      74 +    log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+      75 +  })
+      76 +}
+      77 +
+      78  // TagsDB holds parsed tags indexed by tag name.
+      79  type TagsDB struct {
+      80    tags map[string][]Tag
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      229    })
+      230
+      231    log.Printf("listening on %s", *addr)
+      232 -  if err := http.ListenAndServe(*addr, mux); err != nil {
+      232 +  if err := http.ListenAndServe(*addr, accessLog(mux)); err != nil {
+      233      log.Fatalf("server error: %v", err)
+      234    }
+      235  }
+  ⎿  Found 4 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 次に main_test.go を更新します。newHandler() にミドルウェアを適用し、テストを追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 2 lines
+       1  package main
+       2
+       3  import (
+       4 +  "bytes"
+       5    "encoding/json"
+       6    "errors"
+       7    "fmt"
+       8 +  "log"
+       9    "net/http"
+      10    "net/http/httptest"
+      11    "os"
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      212      w.Header().Set("Content-Type", "application/json")
+      213      json.NewEncoder(w).Encode(results)
+      214    })
+      215 -  return mux
+      215 +  return accessLog(mux)
+      216  }
+      217
+      218  func TestHandler_ReturnsTagJSON(t *testing.T) {
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ テストコードを追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 58 lines
+      410    }
+      411  }
+      412
+      413 +// ---- accessLog middleware tests ----
+      414 +
+      415 +// captureLog redirects the default logger to a buffer for the duration of fn.
+      416 +func captureLog(t *testing.T, fn func()) string {
+      417 +  t.Helper()
+      418 +  var buf bytes.Buffer
+      419 +  log.SetOutput(&buf)
+      420 +  defer log.SetOutput(os.Stderr)
+      421 +  fn()
+      422 +  return buf.String()
+      423 +}
+      424 +
+      425 +func TestAccessLog_LogsMethodAndPath(t *testing.T) {
+      426 +  output := captureLog(t, func() {
+      427 +    req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+      428 +    w := httptest.NewRecorder()
+      429 +    newHandler().ServeHTTP(w, req)
+      430 +  })
+      431 +  if !strings.Contains(output, "GET") {
+      432 +    t.Errorf("log output missing method GET: %q", output)
+      433 +  }
+      434 +  if !strings.Contains(output, "/healthz") {
+      435 +    t.Errorf("log output missing path /healthz: %q", output)
+      436 +  }
+      437 +}
+      438 +
+      439 +func TestAccessLog_LogsStatusCode(t *testing.T) {
+      440 +  output := captureLog(t, func() {
+      441 +    req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+      442 +    w := httptest.NewRecorder()
+      443 +    newHandler().ServeHTTP(w, req)
+      444 +  })
+      445 +  if !strings.Contains(output, "200") {
+      446 +    t.Errorf("log output missing status 200: %q", output)
+      447 +  }
+      448 +}
+      449 +
+      450 +func TestAccessLog_LogsErrorStatusCode(t *testing.T) {
+      451 +  output := captureLog(t, func() {
+      452 +    req := httptest.NewRequest(http.MethodGet, "/tags/", nil)
+      453 +    w := httptest.NewRecorder()
+      454 +    newHandler().ServeHTTP(w, req)
+      455 +  })
+      456 +  if !strings.Contains(output, "400") {
+      457 +    t.Errorf("log output missing status 400: %q", output)
+      458 +  }
+      459 +}
+      460 +
+      461 +func TestAccessLog_PassesThroughResponse(t *testing.T) {
+      462 +  req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+      463 +  w := httptest.NewRecorder()
+      464 +  newHandler().ServeHTTP(w, req)
+      465 +
+      466 +  if w.Code != http.StatusOK {
+      467 +    t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+      468 +  }
+      469 +}
+      470 +
+      471  // ---- MarshalJSON tests ----
+      472
+      473  func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.661s
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テスト通過しました。変更内容:
+
+  main.go:
+  - responseRecorder struct: http.ResponseWriter をラップしてステータスコードをキャプチャ
+  - accessLog(next http.Handler) http.Handler: リクエストごとに method path status duration をログ出力するミドルウェア
+  - main() で accessLog(mux) を適用
+
+  main_test.go:
+  - newHandler() を accessLog(mux) でラップするよう更新
+  - captureLog() ヘルパー: デフォルトロガーの出力を一時的にバッファに切り替え
+  - TestAccessLog_LogsMethodAndPath: ログにメソッドとパスが含まれることを検証
+  - TestAccessLog_LogsStatusCode: 200 OK のステータスコードをログ出力することを検証
+  - TestAccessLog_LogsErrorStatusCode: エラー (400) のステータスコードをログ出力することを検証
+  - TestAccessLog_PassesThroughResponse: ミドルウェアがレスポンスを正しく通過させることを検証
+
+✻ Crunched for 1m 53s
+
+❯ /exit
+  ⎿  Bye!
+```

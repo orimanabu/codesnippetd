@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Tag represents a single ctags entry in Universal Ctags JSON output format.
@@ -51,6 +52,27 @@ func (t Tag) MarshalJSON() ([]byte, error) {
 		m[k] = v
 	}
 	return json.Marshal(m)
+}
+
+// responseRecorder wraps http.ResponseWriter to capture the written status code.
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *responseRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+// accessLog is middleware that logs each request's method, path, status code, and duration.
+func accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+	})
 }
 
 // TagsDB holds parsed tags indexed by tag name.
@@ -207,7 +229,7 @@ func main() {
 	})
 
 	log.Printf("listening on %s", *addr)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
+	if err := http.ListenAndServe(*addr, accessLog(mux)); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
