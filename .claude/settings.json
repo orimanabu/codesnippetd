@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff)",
+      "Read"
+    ],
+    "deny": [
+      "Bash(curl -fsSL:*)",
+      "Bash(wget:*)",
+      "Bash(nc:*)",
+      "Bash(ssh:*)",
+      "Bash(python -c:*)",
+      "Bash(node -e:*)"
+    ]
+  }
+}

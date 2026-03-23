@@ -1,0 +1,13 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
+!_TAG_PROGRAM_NAME	Universal Ctags	//
+!_TAG_PROGRAM_VERSION	6.1.0	//
+MyStruct	sample.go	/^type MyStruct struct {$/;"	kind:type	line:5	language:Go
+NewMyStruct	sample.go	/^func NewMyStruct(name string) \*MyStruct {$/;"	kind:function	line:11	language:Go
+Run	sample.go	/^func (m \*MyStruct) Run() error {$/;"	kind:method	line:17	language:Go	typeref:typename:error
+helperFunc	sample.go	/^func helperFunc(x int) int {$/;"	kind:function	line:24	language:Go
+MyConst	sample.go	/^	MyConst = 42$/;"	kind:constant	line:30	language:Go
+overloaded	sample.go	/^func overloaded() string {$/;"	kind:function	line:35	language:Go
+overloaded	other.go	/^func overloaded() int {$/;"	kind:function	line:8	language:Go
+lineonly	sample.go	42	kind:variable	language:Go
