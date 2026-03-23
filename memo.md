@@ -1,3 +1,11 @@
+# My memo
+
+```
+ctags -R --extras=+g --fields=+e
+```
+
+# Prompts
+
  ```
  ▐▛███▜▌   Claude Code v2.1.76
 ▝▜█████▛▘  Sonnet 4.6 · Claude Pro
