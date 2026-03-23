@@ -997,3 +997,462 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 ❯ /exit
   ⎿  Goodbye!
 ```
+
+```
+ ▐▛███▜▌   Claude Code v2.1.76
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
+
+❯ `/tags/{name}` でtagからnameを検索する際、readtagsコマンドを使うように変更して
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ readtags コマンドの使い方を確認してから実装します。
+
+⏺ Bash(which readtags && readtags --help 2>&1 | head -30)
+  ⎿  /opt/homebrew/bin/readtags
+     Find tag file entries matching specified names.
+     … +28 lines (ctrl+o to expand)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(readtags --help 2>&1 | grep -A5 "\-t\|--tag-file" | head -20)
+  ⎿      -D | --list-pseudo-tags
+             List pseudo tags.
+     Options:
+     … +12 lines (ctrl+o to expand)
+
+⏺ Bash(cd /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata && readtags -t tags -e MyStruct)
+  ⎿  MyStruct   sample.go       /^type MyStruct struct {$/;"    kind:type       language:Go
+
+⏺ Bash(readtags -t tags -e overloaded; echo "exit: $?")
+  ⎿  overloaded sample.go       /^func overloaded() string {$/;"        kind:function   language:Go
+     overloaded other.go        /^func overloaded() int {$/;"   kind:function   language:Go
+     exit: 0
+
+⏺ Bash(readtags -t tags -e NonExistent; echo "exit: $?")
+  ⎿  exit: 0
+
+⏺ Bash(readtags -t /nonexistent/tags -e Foo 2>&1; echo "exit: $?")
+  ⎿  readtags: cannot open tag file: No such file or directory: /nonexistent/tags
+     exit: 1
+
+⏺ 動作確認できました。実装します。
+
+  - -e で extension fields を含む出力
+  - タグなし → 空出力 + exit 0
+  - ファイルなし → stderr にエラー + exit 1
+
+⏺ Update(~/devel/src/github.com/orimanabu/codesnippetd/main.go)
+  ⎿  Added 1 line
+       8    "log"
+       9    "net/http"
+      10    "os"
+      11 +  "os/exec"
+      12    "path/filepath"
+      13    "strconv"
+      14    "strings"
+
+⏺ 次に、lookupWithReadtags 関数を追加します。
+
+⏺ Update(~/devel/src/github.com/orimanabu/codesnippetd/main.go)
+  ⎿  Added 31 lines
+      175    return db.tags[name]
+      176  }
+      177
+      178 +// lookupWithReadtags runs the readtags command to find tags matching tagName in tagsPath.
+      179 +// Returns os.ErrNotExist if the tags file does not exist.
+      180 +func lookupWithReadtags(tagsPath, tagName string) ([]Tag, error) {
+      181 +  if _, err := os.Stat(tagsPath); err != nil {
+      182 +    if errors.Is(err, os.ErrNotExist) {
+      183 +      return nil, fmt.Errorf("tags file not found: %w", os.ErrNotExist)
+      184 +    }
+      185 +    return nil, fmt.Errorf("stat tags file: %w", err)
+      186 +  }
+      187 +
+      188 +  cmd := exec.Command("readtags", "-t", tagsPath, "-e", tagName)
+      189 +  out, err := cmd.Output()
+      190 +  if err != nil {
+      191 +    var exitErr *exec.ExitError
+      192 +    if errors.As(err, &exitErr) {
+      193 +      return nil, fmt.Errorf("readtags: %s", strings.TrimSpace(string(exitErr.Stderr)))
+      194 +    }
+      195 +    return nil, fmt.Errorf("running readtags: %w", err)
+      196 +  }
+      197 +
+      198 +  var tags []Tag
+      199 +  for _, line := range strings.Split(string(out), "\n") {
+      200 +    tag, ok := parseLine(line)
+      201 +    if !ok {
+      202 +      continue
+      203 +    }
+      204 +    tags = append(tags, tag)
+      205 +  }
+      206 +  return tags, nil
+      207 +}
+      208 +
+      209  // tagsFileForContext resolves the tags file path given an optional context query param.
+      210  // If context is empty, "./tags" is used. Otherwise "<context>/tags" is used.
+      211  func tagsFileForContext(context string) string {
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ 次に GET /tags/{name} ハンドラを lookupWithReadtags を使うように変更します。
+
+⏺ Update(~/devel/src/github.com/orimanabu/codesnippetd/main.go)
+  ⎿  Added 3 lines, removed 6 lines
+      254
+      255    mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
+      256      tagName := r.PathValue("name")
+      257 -
+      258 -    // Resolve tags file path
+      257      context := r.URL.Query().Get("context")
+      258      tagsPath := tagsFileForContext(context)
+      259
+      262 -    db, err := loadTagsFile(tagsPath)
+      260 +    results, err := lookupWithReadtags(tagsPath, tagName)
+      261      if err != nil {
+      262        if errors.Is(err, os.ErrNotExist) {
+      263          http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      264        } else {
+      267 -        http.Error(w, fmt.Sprintf("failed to load tags file: %v", err), http.StatusInternalServerError)
+      265 +        http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+      266        }
+      267        return
+      268      }
+      269
+      272 -    results := db.lookup(tagName)
+      273 -    if results == nil {
+      270 +    if len(results) == 0 {
+      271        http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+      272        return
+      273      }
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ ビルドを確認します。
+
+⏺ Bash(cd /Users/ori/devel/src/github.com/orimanabu/codesnippetd && go build ./...)
+  ⎿  (No output)
+
+⏺ 次にテストファイルの newHandler() の /tags/ ハンドラも lookupWithReadtags を使うように更新し、readtags が必要なテストにスキップ条件を追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+       9    "net/http"
+      10    "net/http/httptest"
+      11    "os"
+      12 +  "os/exec"
+      13    "path/filepath"
+      14    "strings"
+      15    "testing"
+
+⏺ Update(main_test.go)
+  ⎿  Error editing file
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Searched for 2 patterns (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 8 lines
+      167
+      168  // ---- HTTP handler tests ----
+      169
+      170 +// skipIfNoReadtags skips the test if readtags is not installed.
+      171 +func skipIfNoReadtags(t *testing.T) {
+      172 +  t.Helper()
+      173 +  if _, err := exec.LookPath("readtags"); err != nil {
+      174 +    t.Skip("readtags not found in PATH")
+      175 +  }
+      176 +}
+      177 +
+      178  // newTestServer returns an httptest.Server rooted at dir, so that tags file
+      179  // resolution (which uses relative paths from cwd) works correctly.
+      180  func withCwd(t *testing.T, dir string, fn func()) {
+
+⏺ 次に newHandler() の /tags/ ハンドラを lookupWithReadtags 使用に変更します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 3 lines, removed 4 lines
+      223      }
+      224      context := r.URL.Query().Get("context")
+      225      tagsPath := tagsFileForContext(context)
+      226 -    db, err := loadTagsFile(tagsPath)
+      226 +    results, err := lookupWithReadtags(tagsPath, tagName)
+      227      if err != nil {
+      228        if errors.Is(err, os.ErrNotExist) {
+      229          http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+      230        } else {
+      231 -        http.Error(w, "failed to load tags file: "+err.Error(), http.StatusInternalServerError)
+      231 +        http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+      232        }
+      233        return
+      234      }
+      235 -    results := db.lookup(tagName)
+      236 -    if results == nil {
+      235 +    if len(results) == 0 {
+      236        http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+      237        return
+      238      }
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ skipIfNoReadtags を readtags が必要なテストに追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      243  }
+      244
+      245  func TestHandler_ReturnsTagJSON(t *testing.T) {
+      246 +  skipIfNoReadtags(t)
+      247    withCwd(t, "testdata", func() {
+      248      srv := httptest.NewServer(newHandler())
+      249      defer srv.Close()
+  ⎿  Found 8 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      284  }
+      285
+      286  func TestHandler_MultipleTagsSameName(t *testing.T) {
+      287 +  skipIfNoReadtags(t)
+      288    withCwd(t, "testdata", func() {
+      289      srv := httptest.NewServer(newHandler())
+      290      defer srv.Close()
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      310  }
+      311
+      312  func TestHandler_TagNotFound(t *testing.T) {
+      313 +  skipIfNoReadtags(t)
+      314    withCwd(t, "testdata", func() {
+      315      srv := httptest.NewServer(newHandler())
+      316      defer srv.Close()
+  ⎿  Found 7 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      362  }
+      363
+      364  func TestHandler_ContextQueryParam(t *testing.T) {
+      365 +  skipIfNoReadtags(t)
+      366    withCwd(t, "testdata", func() {
+      367      srv := httptest.NewServer(newHandler())
+      368      defer srv.Close()
+  ⎿  Found 6 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      391  }
+      392
+      393  func TestHandler_ExtraFieldsInlined(t *testing.T) {
+      394 +  skipIfNoReadtags(t)
+      395    withCwd(t, "testdata", func() {
+      396      srv := httptest.NewServer(newHandler())
+      397      defer srv.Close()
+  ⎿  Found 6 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ テストを実行します。
+
+⏺ Bash(go test ./... -v 2>&1 | tail -40)
+  ⎿  === RUN   TestHandler_MissingTagName
+     2026/03/24 01:19:57 GET /tags/ 400 2.25µs
+     --- PASS: TestHandler_MissingTagName (0.00s)
+     … +37 lines (ctrl+o to expand)
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テスト PASS です。変更内容をまとめます。
+
+  ---
+  変更内容:
+
+  main.go
+  - os/exec を import に追加
+  - lookupWithReadtags(tagsPath, tagName string) ([]Tag, error) 関数を追加:
+    - os.Stat でファイル存在確認（不在なら os.ErrNotExist を wrap して返す）
+    - readtags -t <tagsPath> -e <tagName> を実行（-e で extension fields を含む）
+    - 出力を既存の parseLine でパース
+  - GET /tags/{name} ハンドラを loadTagsFile + lookup から lookupWithReadtags に変更
+    - タグなし（空結果）→ 404
+    - readtags エラー → 500
+
+  main_test.go
+  - os/exec を import に追加
+  - skipIfNoReadtags ヘルパーを追加（readtags 未インストール環境でスキップ）
+  - newHandler() の /tags/ ハンドラも lookupWithReadtags を使用するよう変更
+  - readtags が必要な5つのテスト関数に skipIfNoReadtags(t) を追加
+
+✻ Brewed for 2m 43s
+
+❯ readtagsコマンドがない場合、db.lookup()にフォールバックしてください
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ lookupTag 関数を追加し、readtags がなければ loadTagsFile + db.lookup() にフォールバックします。
+
+⏺ Update(main.go)
+  ⎿  Added 13 lines
+      206    return tags, nil
+      207  }
+      208
+      209 +// lookupTag searches for tags by name. It uses readtags if available, otherwise
+      210 +// falls back to in-memory parsing via loadTagsFile.
+      211 +func lookupTag(tagsPath, tagName string) ([]Tag, error) {
+      212 +  if _, err := exec.LookPath("readtags"); err == nil {
+      213 +    return lookupWithReadtags(tagsPath, tagName)
+      214 +  }
+      215 +  db, err := loadTagsFile(tagsPath)
+      216 +  if err != nil {
+      217 +    return nil, err
+      218 +  }
+      219 +  return db.lookup(tagName), nil
+      220 +}
+      221 +
+      222  // tagsFileForContext resolves the tags file path given an optional context query param.
+      223  // If context is empty, "./tags" is used. Otherwise "<context>/tags" is used.
+      224  func tagsFileForContext(context string) string {
+
+⏺ 次に GET /tags/{name} ハンドラを lookupTag に変更します。
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      270      context := r.URL.Query().Get("context")
+      271      tagsPath := tagsFileForContext(context)
+      272
+      273 -    results, err := lookupWithReadtags(tagsPath, tagName)
+      273 +    results, err := lookupTag(tagsPath, tagName)
+      274      if err != nil {
+      275        if errors.Is(err, os.ErrNotExist) {
+      276          http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ main_test.go も同様に更新し、skipIfNoReadtags を削除します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      223      }
+      224      context := r.URL.Query().Get("context")
+      225      tagsPath := tagsFileForContext(context)
+      226 -    results, err := lookupWithReadtags(tagsPath, tagName)
+      226 +    results, err := lookupTag(tagsPath, tagName)
+      227      if err != nil {
+      228        if errors.Is(err, os.ErrNotExist) {
+      229          http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+
+⏺ skipIfNoReadtags の定義と各テストでの呼び出しを削除します。
+
+⏺ Update(main_test.go)
+  ⎿  Removed 8 lines
+      167
+      168  // ---- HTTP handler tests ----
+      169
+      170 -// skipIfNoReadtags skips the test if readtags is not installed.
+      171 -func skipIfNoReadtags(t *testing.T) {
+      172 -  t.Helper()
+      173 -  if _, err := exec.LookPath("readtags"); err != nil {
+      174 -    t.Skip("readtags not found in PATH")
+      175 -  }
+      176 -}
+      177 -
+      170  // newTestServer returns an httptest.Server rooted at dir, so that tags file
+      171  // resolution (which uses relative paths from cwd) works correctly.
+      172  func withCwd(t *testing.T, dir string, fn func()) {
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 各テストの skipIfNoReadtags(t) 呼び出しを削除します。
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+      235  }
+      236
+      237  func TestHandler_ReturnsTagJSON(t *testing.T) {
+      238 -  skipIfNoReadtags(t)
+      238    withCwd(t, "testdata", func() {
+      239      srv := httptest.NewServer(newHandler())
+      240      defer srv.Close()
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+      275  }
+      276
+      277  func TestHandler_MultipleTagsSameName(t *testing.T) {
+      278 -  skipIfNoReadtags(t)
+      278    withCwd(t, "testdata", func() {
+      279      srv := httptest.NewServer(newHandler())
+      280      defer srv.Close()
+  ⎿  Found 4 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+      300  }
+      301
+      302  func TestHandler_TagNotFound(t *testing.T) {
+      303 -  skipIfNoReadtags(t)
+      303    withCwd(t, "testdata", func() {
+      304      srv := httptest.NewServer(newHandler())
+      305      defer srv.Close()
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+      351  }
+      352
+      353  func TestHandler_ContextQueryParam(t *testing.T) {
+      354 -  skipIfNoReadtags(t)
+      354    withCwd(t, "testdata", func() {
+      355      srv := httptest.NewServer(newHandler())
+      356      defer srv.Close()
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+      379  }
+      380
+      381  func TestHandler_ExtraFieldsInlined(t *testing.T) {
+      382 -  skipIfNoReadtags(t)
+      382    withCwd(t, "testdata", func() {
+      383      srv := httptest.NewServer(newHandler())
+      384      defer srv.Close()
+
+⏺ os/exec が main_test.go でもう使われていないので import を削除します。
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+       9    "net/http"
+      10    "net/http/httptest"
+      11    "os"
+      12 -  "os/exec"
+      12    "path/filepath"
+      13    "strings"
+      14    "testing"
+
+⏺ Bash(go test ./... -v 2>&1 | grep -E "^(=== RUN|--- |PASS|FAIL|ok)")
+  ⎿  === RUN   TestParseLine_SkipsMetadataLines
+     --- PASS: TestParseLine_SkipsMetadataLines (0.00s)
+     === RUN   TestParseLine_BasicFunction
+     … +44 lines (ctrl+o to expand)
+  ⎿  Found 8 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テスト PASS です。
+
+  変更内容:
+
+  main.go
+  - lookupTag(tagsPath, tagName string) ([]Tag, error) 関数を追加:
+    - exec.LookPath("readtags") で readtags の存在を確認
+    - 存在すれば lookupWithReadtags を使用
+    - なければ loadTagsFile + db.lookup() にフォールバック
+  - GET /tags/{name} ハンドラを lookupTag 呼び出しに変更
+
+  main_test.go
+  - newHandler() の /tags/ ハンドラも lookupTag を使用するよう変更
+  - skipIfNoReadtags とその呼び出しを削除（フォールバックにより不要）
+  - os/exec の import を削除
+
+✻ Baked for 1m 8s
+
+❯ ありがとう、いい感じになりました
+
+⏺ よかったです！何かあればまたどうぞ。
+
+❯ /exit
+  ⎿  Catch you later!
+```

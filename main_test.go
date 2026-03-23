@@ -214,17 +214,16 @@ func newHandler() http.Handler {
 		}
 		context := r.URL.Query().Get("context")
 		tagsPath := tagsFileForContext(context)
-		db, err := loadTagsFile(tagsPath)
+		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
 			} else {
-				http.Error(w, "failed to load tags file: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
 			}
 			return
 		}
-		results := db.lookup(tagName)
-		if results == nil {
+		if len(results) == 0 {
 			http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
 			return
 		}

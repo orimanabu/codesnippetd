@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -174,6 +175,50 @@ func (db *TagsDB) lookup(name string) []Tag {
 	return db.tags[name]
 }
 
+// lookupWithReadtags runs the readtags command to find tags matching tagName in tagsPath.
+// Returns os.ErrNotExist if the tags file does not exist.
+func lookupWithReadtags(tagsPath, tagName string) ([]Tag, error) {
+	if _, err := os.Stat(tagsPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("tags file not found: %w", os.ErrNotExist)
+		}
+		return nil, fmt.Errorf("stat tags file: %w", err)
+	}
+
+	cmd := exec.Command("readtags", "-t", tagsPath, "-e", tagName)
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("readtags: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("running readtags: %w", err)
+	}
+
+	var tags []Tag
+	for _, line := range strings.Split(string(out), "\n") {
+		tag, ok := parseLine(line)
+		if !ok {
+			continue
+		}
+		tags = append(tags, tag)
+	}
+	return tags, nil
+}
+
+// lookupTag searches for tags by name. It uses readtags if available, otherwise
+// falls back to in-memory parsing via loadTagsFile.
+func lookupTag(tagsPath, tagName string) ([]Tag, error) {
+	if _, err := exec.LookPath("readtags"); err == nil {
+		return lookupWithReadtags(tagsPath, tagName)
+	}
+	db, err := loadTagsFile(tagsPath)
+	if err != nil {
+		return nil, err
+	}
+	return db.lookup(tagName), nil
+}
+
 // tagsFileForContext resolves the tags file path given an optional context query param.
 // If context is empty, "./tags" is used. Otherwise "<context>/tags" is used.
 func tagsFileForContext(context string) string {
@@ -222,23 +267,20 @@ func main() {
 
 	mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
-
-		// Resolve tags file path
 		context := r.URL.Query().Get("context")
 		tagsPath := tagsFileForContext(context)
 
-		db, err := loadTagsFile(tagsPath)
+		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
 			} else {
-				http.Error(w, fmt.Sprintf("failed to load tags file: %v", err), http.StatusInternalServerError)
+				http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
 			}
 			return
 		}
 
-		results := db.lookup(tagName)
-		if results == nil {
+		if len(results) == 0 {
 			http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
 			return
 		}
