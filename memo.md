@@ -1456,3 +1456,198 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 ❯ /exit
   ⎿  Catch you later!
 ```
+
+```
+ ▐▛███▜▌   Claude Code v2.1.76
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
+
+❯ REST APIのAPIリファレンスドキュメントを作ってREADME.mdに書いてください
+
+⏺ Searched for 2 patterns, read 3 files (ctrl+o to expand)
+
+⏺ Now I have a full understanding of the codebase. Let me write the API reference documentation.
+
+⏺ Write(README.md)
+  ⎿  Added 160 lines, removed 1 line
+        1 -# codesnippetd
+        1   No newline at end of file
+        2 +# codesnippetd
+        3 +
+        4 +A REST API server that exposes [Universal Ctags](https://ctags.io/) tag databases over HTTP.
+        5 +
+        6 +## Usage
+        7 +
+        8 +```
+        9 +codesnippetd [-addr <listen-address>]
+       10 +```
+       11 +
+       12 +| Flag | Default | Description |
+       13 +|------|---------|-------------|
+       14 +| `-addr` | `:8080` | TCP address to listen on |
+       15 +
+       16 +The server resolves tag files relative to its **current working directory**:
+       17 +
+       18 +- Default: `./tags`
+       19 +- With `?context=<path>`: `./<path>/tags`
+       20 +
+       21 +## API Reference
+       22 +
+       23 +### Health Check
+       24 +
+       25 +```
+       26 +GET /healthz
+       27 +```
+       28 +
+       29 +Returns the server health status.
+       30 +
+       31 +**Response**
+       32 +
+       33 +`200 OK`
+       34 +
+       35 +```json
+       36 +{"status": "ok"}
+       37 +```
+       38 +
+       39 +---
+       40 +
+       41 +### List All Tags
+       42 +
+       43 +```
+       44 +GET /tags
+       45 +```
+       46 +
+       47 +Returns all tags from the tags file.
+       48 +
+       49 +**Query Parameters**
+       50 +
+       51 +| Parameter | Required | Description |
+       52 +|-----------|----------|-------------|
+       53 +| `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+       54 +
+       55 +**Responses**
+       56 +
+       57 +| Status | Description |
+       58 +|--------|-------------|
+       59 +| `200 OK` | JSON array of tag objects |
+       60 +| `404 Not Found` | Tags file does not exist |
+       61 +| `500 Internal Server Error` | Failed to load or parse the tags file |
+       62 +
+       63 +**Example**
+       64 +
+       65 +```
+       66 +GET /tags
+       67 +GET /tags?context=myproject
+       68 +```
+       69 +
+       70 +```json
+       71 +[
+       72 +  {
+       73 +    "_type": "tag",
+       74 +    "name": "MyFunc",
+       75 +    "path": "main.go",
+       76 +    "pattern": "^func MyFunc() {$",
+       77 +    "language": "Go",
+       78 +    "kind": "function",
+       79 +    "line": 10
+       80 +  }
+       81 +]
+       82 +```
+       83 +
+       84 +---
+       85 +
+       86 +### Look Up a Tag by Name
+       87 +
+       88 +```
+       89 +GET /tags/{name}
+       90 +```
+       91 +
+       92 +Returns all tags matching the given name.
+       93 +
+       94 +**Path Parameters**
+       95 +
+       96 +| Parameter | Description |
+       97 +|-----------|-------------|
+       98 +| `name` | Tag name to search for |
+       99 +
+      100 +**Query Parameters**
+      101 +
+      102 +| Parameter | Required | Description |
+      103 +|-----------|----------|-------------|
+      104 +| `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+      105 +
+      106 +**Responses**
+      107 +
+      108 +| Status | Description |
+      109 +|--------|-------------|
+      110 +| `200 OK` | JSON array of matching tag objects |
+      111 +| `404 Not Found` | Tag not found, or tags file does not exist |
+      112 +| `500 Internal Server Error` | Failed to run `readtags` or parse the tags file |
+      113 +
+      114 +**Example**
+      115 +
+      116 +```
+      117 +GET /tags/MyFunc
+      118 +GET /tags/MyFunc?context=myproject
+      119 +```
+      120 +
+      121 +```json
+      122 +[
+      123 +  {
+      124 +    "_type": "tag",
+      125 +    "name": "MyFunc",
+      126 +    "path": "main.go",
+      127 +    "pattern": "^func MyFunc() {$",
+      128 +    "language": "Go",
+      129 +    "kind": "function",
+      130 +    "line": 10
+      131 +  }
+      132 +]
+      133 +```
+      134 +
+      135 +---
+      136 +
+      137 +## Tag Object
+      138 +
+      139 +Fields follow the [Universal Ctags JSON output format](https://docs.ctags.io/en/latest/man/ctags-client-tools.7.html). Optional fields are omitted when empty.
+      140 +
+      141 +| Field | Type | Description |
+      142 +|-------|------|-------------|
+      143 +| `_type` | string | Always `"tag"` |
+      144 +| `name` | string | Tag name |
+      145 +| `path` | string | Source file path |
+      146 +| `pattern` | string | Search pattern from the tags file (optional) |
+      147 +| `language` | string | Programming language (optional) |
+      148 +| `kind` | string | Tag kind, e.g. `function`, `type`, `method` (optional) |
+      149 +| `line` | number | Line number in the source file (optional) |
+      150 +| *(extension fields)* | string | Additional ctags extension fields (e.g. `typeref`, `scope`) are inlined at the top level |
+      151 +
+      152 +## Tag File Resolution
+      153 +
+      154 +The server resolves tags files relative to the working directory at startup:
+      155 +
+      156 +| `context` query param | Tags file path |
+      157 +|-----------------------|----------------|
+      158 +| *(not set)* | `./tags` |
+      159 +| `sub/project` | `./sub/project/tags` |
+      160 +
+      161 +If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}`); otherwise the tags file is parsed in-memory.
+
+⏺ README.md にAPIリファレンスドキュメントを書きました。内容は以下の通りです:
+
+  - Usage — 起動方法と -addr フラグ
+  - GET /healthz — ヘルスチェックエンドポイント
+  - GET /tags — 全タグ一覧（context クエリパラメータ対応）
+  - GET /tags/{name} — タグ名による検索（context クエリパラメータ対応）
+  - Tag Object — レスポンスのフィールド定義（拡張フィールドのインライン展開を含む）
+  - Tag File Resolution — context パラメータによるタグファイルパスの解決ルール
+
+✻ Cogitated for 38s
+
+❯ ありがとう、完璧です
+
+⏺ どういたしまして!
+
+❯ /exit
+  ⎿  See ya!
+```
