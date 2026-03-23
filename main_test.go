@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -229,6 +230,38 @@ func newHandler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(results)
+	})
+	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+		tagName := r.PathValue("name")
+		context := r.URL.Query().Get("context")
+		tagsPath := tagsFileForContext(context)
+
+		results, err := lookupTag(tagsPath, tagName)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+			} else {
+				http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		if len(results) == 0 {
+			http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+			return
+		}
+
+		var snippets []Snippet
+		for _, tag := range results {
+			s, err := snippetForTag(tag)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			snippets = append(snippets, s)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(snippets)
 	})
 	return accessLog(mux)
 }
@@ -592,6 +625,471 @@ func TestHandler_ListAllTags_TagsFileNotFound(t *testing.T) {
 
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
+}
+
+// ---- normalizeTagPattern tests ----
+
+func TestNormalizeTagPattern_StripsAnchors(t *testing.T) {
+	got := normalizeTagPattern("^func MyFunc() {$")
+	want := "func MyFunc() {"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeTagPattern_UnescapesAsterisk(t *testing.T) {
+	got := normalizeTagPattern(`^func (m \*MyStruct) Run() {$`)
+	want := "func (m *MyStruct) Run() {"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeTagPattern_NoAnchors(t *testing.T) {
+	got := normalizeTagPattern("func plain")
+	if got != "func plain" {
+		t.Errorf("got %q, want %q", got, "func plain")
+	}
+}
+
+// ---- findPatternLine tests ----
+
+func TestFindPatternLine_Found(t *testing.T) {
+	lines := []string{"package main", "", "func MyFunc() {", "\treturn", "}"}
+	// ctags-style pattern with anchors
+	got := findPatternLine(lines, "^func MyFunc() {$")
+	if got != 3 {
+		t.Errorf("got %d, want 3", got)
+	}
+}
+
+func TestFindPatternLine_NotFound(t *testing.T) {
+	lines := []string{"foo", "bar", "baz"}
+	got := findPatternLine(lines, "^nothere$")
+	if got != -1 {
+		t.Errorf("got %d, want -1", got)
+	}
+}
+
+func TestFindPatternLine_FirstMatchWins(t *testing.T) {
+	lines := []string{"func foo() {", "// func foo is here", "func foo() {"}
+	got := findPatternLine(lines, "^func foo() {$")
+	if got != 1 {
+		t.Errorf("got %d, want 1", got)
+	}
+}
+
+func TestFindPatternLine_EmptyLines(t *testing.T) {
+	got := findPatternLine([]string{}, "^anything$")
+	if got != -1 {
+		t.Errorf("got %d, want -1", got)
+	}
+}
+
+func TestFindPatternLine_UnescapedPattern(t *testing.T) {
+	lines := []string{"package p", "", `func (m *MyStruct) Run() error {`}
+	got := findPatternLine(lines, `^func (m \*MyStruct) Run() error {$`)
+	if got != 3 {
+		t.Errorf("got %d, want 3", got)
+	}
+}
+
+// ---- extractLines tests ----
+
+func TestExtractLines_Basic(t *testing.T) {
+	lines := []string{"a", "b", "c", "d", "e"}
+	got := extractLines(lines, 2, 4)
+	want := "b\nc\nd"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestExtractLines_SingleLine(t *testing.T) {
+	lines := []string{"a", "b", "c"}
+	got := extractLines(lines, 2, 2)
+	if got != "b" {
+		t.Errorf("got %q, want %q", got, "b")
+	}
+}
+
+func TestExtractLines_ClampsEndBeyondEOF(t *testing.T) {
+	lines := []string{"a", "b", "c"}
+	got := extractLines(lines, 2, 100)
+	want := "b\nc"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestExtractLines_ClampsStartBelowOne(t *testing.T) {
+	lines := []string{"a", "b", "c"}
+	got := extractLines(lines, 0, 2)
+	want := "a\nb"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestExtractLines_FullFile(t *testing.T) {
+	lines := []string{"x", "y", "z"}
+	got := extractLines(lines, 1, 3)
+	want := "x\ny\nz"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// ---- snippetForTag tests ----
+
+func writeTemp(t *testing.T, content string) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "src*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	return f.Name()
+}
+
+func TestSnippetForTag_WithLineAndEndField(t *testing.T) {
+	src := "package p\n\nfunc Greet() {\n\treturn\n}\n\nvar x = 1\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:  "Greet",
+		Path:  path,
+		Line:  3,
+		Extra: map[string]string{"end": "5"},
+	}
+	s, err := snippetForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Start != 3 {
+		t.Errorf("Start: got %d, want 3", s.Start)
+	}
+	if s.End != 5 {
+		t.Errorf("End: got %d, want 5", s.End)
+	}
+	if !strings.Contains(s.Code, "func Greet") {
+		t.Errorf("Code should contain func Greet, got %q", s.Code)
+	}
+	if strings.Contains(s.Code, "var x") {
+		t.Errorf("Code should not contain lines beyond end, got %q", s.Code)
+	}
+}
+
+func TestSnippetForTag_WithPatternAndEndField(t *testing.T) {
+	src := "package p\n\nfunc Hello() {\n}\n\nvar y = 2\n"
+	path := writeTemp(t, src)
+
+	// Line is 0, so pattern search is used; pattern uses ctags-style anchors
+	tag := Tag{
+		Name:    "Hello",
+		Path:    path,
+		Pattern: "^func Hello() {$",
+		Extra:   map[string]string{"end": "4"},
+	}
+	s, err := snippetForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Start != 3 {
+		t.Errorf("Start: got %d, want 3", s.Start)
+	}
+	if s.End != 4 {
+		t.Errorf("End: got %d, want 4", s.End)
+	}
+}
+
+func TestSnippetForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
+	src := "line1\nfunc Foo() {\n\treturn\n}\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:  "Foo",
+		Path:  path,
+		Line:  2,
+		Extra: map[string]string{},
+	}
+	s, err := snippetForTag(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should go to end of file (4 lines + empty from trailing newline = 5 split parts)
+	if s.Start != 2 {
+		t.Errorf("Start: got %d, want 2", s.Start)
+	}
+	if !strings.Contains(s.Code, "func Foo") {
+		t.Errorf("Code should contain func Foo, got %q", s.Code)
+	}
+}
+
+func TestSnippetForTag_FileNotFound(t *testing.T) {
+	tag := Tag{
+		Name:  "Foo",
+		Path:  "/nonexistent/path/src.go",
+		Line:  1,
+		Extra: map[string]string{},
+	}
+	_, err := snippetForTag(tag)
+	if err == nil {
+		t.Fatal("expected error for missing source file")
+	}
+}
+
+func TestSnippetForTag_PatternNotFoundInFile(t *testing.T) {
+	src := "package p\n\nfunc Bar() {}\n"
+	path := writeTemp(t, src)
+
+	// Line is 0 and pattern doesn't match → error
+	tag := Tag{
+		Name:    "Foo",
+		Path:    path,
+		Pattern: "func Foo",
+		Extra:   map[string]string{},
+	}
+	_, err := snippetForTag(tag)
+	if err == nil {
+		t.Fatal("expected error when pattern not found")
+	}
+	if !strings.Contains(err.Error(), "cannot determine start line") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ---- GET /snippets/{name} handler tests ----
+
+func TestSnippetHandler_ReturnsJSON(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/NewMyStruct")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("Content-Type: got %q, want application/json", ct)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+	})
+}
+
+func TestSnippetHandler_SnippetFields(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/NewMyStruct")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		s := snippets[0]
+
+		if s.Name != "NewMyStruct" {
+			t.Errorf("Name: got %q, want NewMyStruct", s.Name)
+		}
+		if s.Start != 11 {
+			t.Errorf("Start: got %d, want 11", s.Start)
+		}
+		if s.End != 13 {
+			t.Errorf("End: got %d, want 13", s.End)
+		}
+		if !strings.Contains(s.Code, "func NewMyStruct") {
+			t.Errorf("Code should contain func NewMyStruct, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "func (m *MyStruct)") {
+			t.Errorf("Code should not extend beyond end line, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_MultipleSnippets(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/overloaded")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 2 {
+			t.Fatalf("expected 2 snippets for overloaded, got %d", len(snippets))
+		}
+		paths := map[string]bool{}
+		for _, s := range snippets {
+			paths[s.Path] = true
+		}
+		if !paths["sample.go"] || !paths["other.go"] {
+			t.Errorf("expected snippets from sample.go and other.go, got paths: %v", paths)
+		}
+	})
+}
+
+func TestSnippetHandler_TagNotFound(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/NonExistent")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
+}
+
+func TestSnippetHandler_TagsFileNotFound(t *testing.T) {
+	withCwd(t, t.TempDir(), func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/anything")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
+}
+
+func TestSnippetHandler_ContextQueryParam(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/SubFunc?context=sub")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Name != "SubFunc" {
+			t.Errorf("Name: got %q, want SubFunc", snippets[0].Name)
+		}
+		if !strings.Contains(snippets[0].Code, "func SubFunc") {
+			t.Errorf("Code should contain func SubFunc, got %q", snippets[0].Code)
+		}
+	})
+}
+
+func TestSnippetHandler_LineOnlyTag(t *testing.T) {
+	// readtags silently skips line-number addressed tags; only loadTagsFile handles them.
+	if _, err := exec.LookPath("readtags"); err == nil {
+		t.Skip("readtags does not return line-number addressed tags")
+	}
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/lineonly")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 42 {
+			t.Errorf("Start: got %d, want 42", snippets[0].Start)
+		}
+		if !strings.Contains(snippets[0].Code, "var lineonly") {
+			t.Errorf("Code should contain var lineonly, got %q", snippets[0].Code)
+		}
+	})
+}
+
+func TestSnippetHandler_CodeBoundaries(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 17 || s.End != 22 {
+			t.Errorf("Start/End: got %d/%d, want 17/22", s.Start, s.End)
+		}
+		// Must include the function body
+		if !strings.Contains(s.Code, "func (m *MyStruct) Run()") {
+			t.Errorf("Code missing function signature, got %q", s.Code)
+		}
+		// Must not include helperFunc which starts at line 24
+		if strings.Contains(s.Code, "func helperFunc") {
+			t.Errorf("Code should not extend past end line, got %q", s.Code)
 		}
 	})
 }

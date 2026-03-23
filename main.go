@@ -228,6 +228,82 @@ func tagsFileForContext(context string) string {
 	return filepath.Join(".", context, "tags")
 }
 
+// Snippet represents a code snippet extracted from a source file for a given tag.
+type Snippet struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+	Code  string `json:"code"`
+}
+
+// normalizeTagPattern strips ctags regex anchors (^ prefix, $ suffix) and
+// unescapes common regex metacharacters so the result can be used with
+// strings.Contains for line matching.
+func normalizeTagPattern(pattern string) string {
+	p := strings.TrimPrefix(pattern, "^")
+	p = strings.TrimSuffix(p, "$")
+	p = strings.NewReplacer(`\*`, "*", `\.`, ".", `\/`, "/", `\\`, `\`).Replace(p)
+	return p
+}
+
+// findPatternLine returns the 1-based line number of the first line containing pattern,
+// or -1 if not found. The pattern may include ctags-style anchors (^/$) and escapes.
+func findPatternLine(lines []string, pattern string) int {
+	search := normalizeTagPattern(pattern)
+	for i, line := range lines {
+		if strings.Contains(line, search) {
+			return i + 1
+		}
+	}
+	return -1
+}
+
+// extractLines returns the joined content of lines[start-1 : end] (1-based, inclusive).
+func extractLines(lines []string, start, end int) string {
+	if start < 1 {
+		start = 1
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[start-1:end], "\n")
+}
+
+// snippetForTag resolves a Snippet from a Tag by reading the source file.
+func snippetForTag(tag Tag) (Snippet, error) {
+	data, err := os.ReadFile(tag.Path)
+	if err != nil {
+		return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
+	}
+	lines := strings.Split(string(data), "\n")
+
+	// Determine start line from line number or pattern match.
+	startLine := tag.Line
+	if startLine == 0 && tag.Pattern != "" {
+		startLine = findPatternLine(lines, tag.Pattern)
+	}
+	if startLine <= 0 {
+		return Snippet{}, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
+	}
+
+	// Determine end line from the "end" extension field, defaulting to EOF.
+	endLine := len(lines)
+	if endStr, ok := tag.Extra["end"]; ok {
+		if n, err := strconv.Atoi(endStr); err == nil {
+			endLine = n
+		}
+	}
+
+	return Snippet{
+		Name:  tag.Name,
+		Path:  tag.Path,
+		Start: startLine,
+		End:   endLine,
+		Code:  extractLines(lines, startLine, endLine),
+	}, nil
+}
+
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	flag.Parse()
@@ -287,6 +363,42 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(results); err != nil {
+			log.Printf("encoding response: %v", err)
+		}
+	})
+
+	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+		tagName := r.PathValue("name")
+		context := r.URL.Query().Get("context")
+		tagsPath := tagsFileForContext(context)
+
+		results, err := lookupTag(tagsPath, tagName)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+			} else {
+				http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		if len(results) == 0 {
+			http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+			return
+		}
+
+		var snippets []Snippet
+		for _, tag := range results {
+			s, err := snippetForTag(tag)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			snippets = append(snippets, s)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(snippets); err != nil {
 			log.Printf("encoding response: %v", err)
 		}
 	})
