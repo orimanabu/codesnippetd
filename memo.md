@@ -3,11 +3,7 @@
 ▝▜█████▛▘  Sonnet 4.6 · Claude Pro
   ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
 
-❯ go言語でAPIサーバを作ってください。サーバは起動すると、カレントディレクトリにあるtagsファイルを読んでparseします。tagsファイルはUniversal
-Ctagsが生成したtagファイルです。URLのパスに `/tags/TAGNAME`
-があると、tagsファイルからTAGNAMEを検索して該当する行をjsonフォーマットにして返します。jsonフォーマットのスキーマは、Universal
-Ctagsで--output-format=jsonを指定したときと同じにしてください。クエリパラメータでcontext=PATHが指定されていたら、./tagsではなく、カレントディレクトリからの相対パス `PATH/tags`
-をタグファイルとして使用します。
+❯ go言語でAPIサーバを作ってください。サーバは起動すると、カレントディレクトリにあるtagsファイルを読んでparseします。tagsファイルはUniversal Ctagsが生成したtagファイルです。URLのパスに `/tags/TAGNAME` があると、tagsファイルからTAGNAMEを検索して該当する行をjsonフォーマットにして返します。jsonフォーマットのスキーマは、Universal Ctagsで--output-format=jsonを指定したときと同じにしてください。クエリパラメータでcontext=PATHが指定されていたら、./tagsではなく、カレントディレクトリからの相対パス `PATH/tags` をタグファイルとして使用します。
 
 ⏺ まず既存のコードを確認します。
 
@@ -1657,8 +1653,7 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 ▝▜█████▛▘  Sonnet 4.6 · Claude Pro
   ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
 
-❯ `/snippets/{name}`のエンドポイントを新規に作成してください。このエンドポイントがコールされると、tagsファイルを読んで、`/tags/{name}`を呼んだときのpathで指定されたファイルのpatte
-rnにマッチする行)から、endの行までのコードスニペットを返します
+❯ `/snippets/{name}`のエンドポイントを新規に作成してください。このエンドポイントがコールされると、tagsファイルを読んで、`/tags/{name}`を呼んだときのpathで指定されたファイルのpatternにマッチする行)から、endの行までのコードスニペットを返します
 
 ⏺ まずコードベースを確認します。
 
