@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -180,6 +181,10 @@ func withCwd(t *testing.T, dir string, fn func()) {
 
 func newHandler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"status":"ok"}`)
+	})
 	mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) {
 		tagName := strings.TrimPrefix(r.URL.Path, "/tags/")
 		if tagName == "" {
@@ -379,6 +384,28 @@ func TestHandler_ExtraFieldsInlined(t *testing.T) {
 			t.Errorf("typeref: got %v, want typename:error", tags[0]["typeref"])
 		}
 	})
+}
+
+// ---- /healthz handler tests ----
+
+func TestHealthz_ReturnsOK(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	newHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type: got %q, want application/json", ct)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["status"] != "ok" {
+		t.Errorf("status field: got %q, want %q", body["status"], "ok")
+	}
 }
 
 // ---- MarshalJSON tests ----

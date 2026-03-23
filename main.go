@@ -167,6 +167,11 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"status":"ok"}`)
+	})
+
 	mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) {
 		// Extract tag name from URL path: /tags/<name>
 		tagName := strings.TrimPrefix(r.URL.Path, "/tags/")
