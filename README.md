@@ -133,6 +133,69 @@ GET /tags/MyFunc?context=myproject
 
 ---
 
+### Get a Code Snippet by Tag Name
+
+```
+GET /snippets/{name}
+```
+
+Returns code snippets extracted from the source files for all tags matching the given name.
+The snippet spans from the tag's start line to the end line recorded in the ctags `end` extension field.
+If the `end` field is absent, the snippet extends to the end of the file.
+
+**Path Parameters**
+
+| Parameter | Description |
+|-----------|-------------|
+| `name` | Tag name to search for |
+
+**Query Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200 OK` | JSON array of snippet objects |
+| `404 Not Found` | Tag not found, or tags file does not exist |
+| `500 Internal Server Error` | Failed to look up the tag or read the source file |
+
+**Example**
+
+```
+GET /snippets/MyFunc
+GET /snippets/MyFunc?context=myproject
+```
+
+```json
+[
+  {
+    "name": "MyFunc",
+    "path": "main.go",
+    "start": 10,
+    "end": 15,
+    "code": "func MyFunc() {\n\treturn 42\n}"
+  }
+]
+```
+
+---
+
+## Snippet Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Tag name |
+| `path` | string | Source file path |
+| `start` | number | Start line of the snippet (1-based, inclusive) |
+| `end` | number | End line of the snippet (1-based, inclusive) |
+| `code` | string | Extracted source code lines joined with newlines |
+
+---
+
 ## Tag Object
 
 Fields follow the [Universal Ctags JSON output format](https://docs.ctags.io/en/latest/man/ctags-client-tools.7.html). Optional fields are omitted when empty.
@@ -157,4 +220,4 @@ The server resolves tags files relative to the working directory at startup:
 | *(not set)* | `./tags` |
 | `sub/project` | `./sub/project/tags` |
 
-If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}`); otherwise the tags file is parsed in-memory.
+If `readtags` is available on `$PATH`, it is used for individual tag lookups (`GET /tags/{name}` and `GET /snippets/{name}`); otherwise the tags file is parsed in-memory.
