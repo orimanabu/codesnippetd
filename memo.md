@@ -760,3 +760,240 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 ❯ /exit
   ⎿  Goodbye!
 ```
+
+```
+ ▐▛███▜▌   Claude Code v2.1.76
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
+
+❯ /tagsを指定すると、tagファイル全体の内容をjsonで返すようにして
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ GET /tags エンドポイントを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 26 lines
+      194      fmt.Fprintln(w, `{"status":"ok"}`)
+      195    })
+      196
+      197 +  mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      198 +    context := r.URL.Query().Get("context")
+      199 +    tagsPath := tagsFileForContext(context)
+      200 +
+      201 +    db, err := loadTagsFile(tagsPath)
+      202 +    if err != nil {
+      203 +      if errors.Is(err, os.ErrNotExist) {
+      204 +        http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      205 +      } else {
+      206 +        http.Error(w, fmt.Sprintf("failed to load tags file: %v", err), http.StatusInternalServerError)
+      207 +      }
+      208 +      return
+      209 +    }
+      210 +
+      211 +    // Collect all tags from the database
+      212 +    var all []Tag
+      213 +    for _, tags := range db.tags {
+      214 +      all = append(all, tags...)
+      215 +    }
+      216 +
+      217 +    w.Header().Set("Content-Type", "application/json")
+      218 +    if err := json.NewEncoder(w).Encode(all); err != nil {
+      219 +      log.Printf("encoding response: %v", err)
+      220 +    }
+      221 +  })
+      222 +
+      223    mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
+      224      tagName := r.PathValue("name")
+      225
+
+⏺ Bash(go build ./...)
+  ⎿  (No output)
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ GET /tags エンドポイントを追加しました。?context=<dir> クエリパラメータにも対応しています。
+
+❯ テストコードも書いて
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ testdataの構造を確認します。
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ newHandler() に /tags ルートを追加し、テストケースを書きます。
+
+⏺ Update(main_test.go)
+  ⎿  Added 19 lines
+      187      w.Header().Set("Content-Type", "application/json")
+      188      fmt.Fprintln(w, `{"status":"ok"}`)
+      189    })
+      190 +  mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      191 +    context := r.URL.Query().Get("context")
+      192 +    tagsPath := tagsFileForContext(context)
+      193 +    db, err := loadTagsFile(tagsPath)
+      194 +    if err != nil {
+      195 +      if errors.Is(err, os.ErrNotExist) {
+      196 +        http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+      197 +      } else {
+      198 +        http.Error(w, "failed to load tags file: "+err.Error(), http.StatusInternalServerError)
+      199 +      }
+      200 +      return
+      201 +    }
+      202 +    var all []Tag
+      203 +    for _, tags := range db.tags {
+      204 +      all = append(all, tags...)
+      205 +    }
+      206 +    w.Header().Set("Content-Type", "application/json")
+      207 +    json.NewEncoder(w).Encode(all)
+      208 +  })
+      209    mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) {
+      210      tagName := strings.TrimPrefix(r.URL.Path, "/tags/")
+      211      if tagName == "" {
+
+⏺ 次にテストケースを末尾に追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 110 lines
+      487    }
+      488  }
+      489
+      490 +// ---- GET /tags (list all) handler tests ----
+      491 +
+      492 +func TestHandler_ListAllTags_ReturnsAllTags(t *testing.T) {
+      493 +  withCwd(t, "testdata", func() {
+      494 +    srv := httptest.NewServer(newHandler())
+      495 +    defer srv.Close()
+      496 +
+      497 +    resp, err := http.Get(srv.URL + "/tags")
+      498 +    if err != nil {
+      499 +      t.Fatal(err)
+      500 +    }
+      501 +    defer resp.Body.Close()
+      502 +
+      503 +    if resp.StatusCode != http.StatusOK {
+      504 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      505 +    }
+      506 +    if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+      507 +      t.Errorf("Content-Type: got %q, want application/json", ct)
+      508 +    }
+      509 +
+      510 +    var tags []map[string]interface{}
+      511 +    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      512 +      t.Fatalf("decode: %v", err)
+      513 +    }
+      514 +    // testdata/tags has 8 entries (overloaded appears twice, lineonly once, etc.)
+      515 +    if len(tags) == 0 {
+      516 +      t.Fatal("expected non-empty tag list")
+      517 +    }
+      518 +    // Every entry must have _type == "tag"
+      519 +    for i, tag := range tags {
+      520 +      if tag["_type"] != "tag" {
+      521 +        t.Errorf("tags[%d]._type: got %v, want tag", i, tag["_type"])
+      522 +      }
+      523 +    }
+      524 +  })
+      525 +}
+      526 +
+      527 +func TestHandler_ListAllTags_CountMatchesFile(t *testing.T) {
+      528 +  withCwd(t, "testdata", func() {
+      529 +    srv := httptest.NewServer(newHandler())
+      530 +    defer srv.Close()
+      531 +
+      532 +    resp, err := http.Get(srv.URL + "/tags")
+      533 +    if err != nil {
+      534 +      t.Fatal(err)
+      535 +    }
+      536 +    defer resp.Body.Close()
+      537 +
+      538 +    var tags []map[string]interface{}
+      539 +    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      540 +      t.Fatalf("decode: %v", err)
+      541 +    }
+      542 +    // testdata/tags has 8 non-metadata lines
+      543 +    if len(tags) != 8 {
+      544 +      t.Errorf("expected 8 tags, got %d", len(tags))
+      545 +    }
+      546 +  })
+      547 +}
+      548 +
+      549 +func TestHandler_ListAllTags_ContextQueryParam(t *testing.T) {
+      550 +  withCwd(t, "testdata", func() {
+      551 +    srv := httptest.NewServer(newHandler())
+      552 +    defer srv.Close()
+      553 +
+      554 +    resp, err := http.Get(srv.URL + "/tags?context=sub")
+      555 +    if err != nil {
+      556 +      t.Fatal(err)
+      557 +    }
+      558 +    defer resp.Body.Close()
+      559 +
+      560 +    if resp.StatusCode != http.StatusOK {
+      561 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      562 +    }
+      563 +
+      564 +    var tags []map[string]interface{}
+      565 +    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      566 +      t.Fatalf("decode: %v", err)
+      567 +    }
+      568 +    if len(tags) == 0 {
+      569 +      t.Fatal("expected non-empty tag list from sub context")
+      570 +    }
+      571 +    names := make(map[string]bool)
+      572 +    for _, tag := range tags {
+      573 +      if n, ok := tag["name"].(string); ok {
+      574 +        names[n] = true
+      575 +      }
+      576 +    }
+      577 +    if !names["SubFunc"] {
+      578 +      t.Errorf("expected SubFunc in sub context tags, got names: %v", names)
+      579 +    }
+      580 +  })
+      581 +}
+      582 +
+      583 +func TestHandler_ListAllTags_TagsFileNotFound(t *testing.T) {
+      584 +  withCwd(t, t.TempDir(), func() {
+      585 +    srv := httptest.NewServer(newHandler())
+      586 +    defer srv.Close()
+      587 +
+      588 +    resp, err := http.Get(srv.URL + "/tags")
+      589 +    if err != nil {
+      590 +      t.Fatal(err)
+      591 +    }
+      592 +    defer resp.Body.Close()
+      593 +
+      594 +    if resp.StatusCode != http.StatusNotFound {
+      595 +      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      596 +    }
+      597 +  })
+      598 +}
+      599 +
+      600  // ---- MarshalJSON tests ----
+      601
+      602  func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go test ./... -v -run "TestHandler_ListAll" 2>&1)
+  ⎿  === RUN   TestHandler_ListAllTags_ReturnsAllTags
+     2026/03/24 00:43:44 GET /tags 200 445.334µs
+     --- PASS: TestHandler_ListAllTags_ReturnsAllTags (0.00s)
+     … +11 lines (ctrl+o to expand)
+  ⎿  Found 4 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テストが通ることも確認します。
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.434s
+
+⏺ 全テストがパスしています。追加したテストは4つです:
+
+  - TestHandler_ListAllTags_ReturnsAllTags — レスポンスが200・application/json・各エントリに _type: "tag" があること
+  - TestHandler_ListAllTags_CountMatchesFile — testdata/tags の8エントリが全て返ること
+  - TestHandler_ListAllTags_ContextQueryParam — ?context=sub でサブディレクトリのタグファイルが使われること
+  - TestHandler_ListAllTags_TagsFileNotFound — タグファイルがない場合に404が返ること
+
+✻ Churned for 48s
+
+❯ /exit
+  ⎿  Goodbye!
+```

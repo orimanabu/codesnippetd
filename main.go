@@ -194,6 +194,32 @@ func main() {
 		fmt.Fprintln(w, `{"status":"ok"}`)
 	})
 
+	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+		context := r.URL.Query().Get("context")
+		tagsPath := tagsFileForContext(context)
+
+		db, err := loadTagsFile(tagsPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+			} else {
+				http.Error(w, fmt.Sprintf("failed to load tags file: %v", err), http.StatusInternalServerError)
+			}
+			return
+		}
+
+		// Collect all tags from the database
+		var all []Tag
+		for _, tags := range db.tags {
+			all = append(all, tags...)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(all); err != nil {
+			log.Printf("encoding response: %v", err)
+		}
+	})
+
 	mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
 

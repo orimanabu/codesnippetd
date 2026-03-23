@@ -187,6 +187,25 @@ func newHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok"}`)
 	})
+	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+		context := r.URL.Query().Get("context")
+		tagsPath := tagsFileForContext(context)
+		db, err := loadTagsFile(tagsPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+			} else {
+				http.Error(w, "failed to load tags file: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		var all []Tag
+		for _, tags := range db.tags {
+			all = append(all, tags...)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(all)
+	})
 	mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) {
 		tagName := strings.TrimPrefix(r.URL.Path, "/tags/")
 		if tagName == "" {
@@ -466,6 +485,116 @@ func TestAccessLog_PassesThroughResponse(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
 	}
+}
+
+// ---- GET /tags (list all) handler tests ----
+
+func TestHandler_ListAllTags_ReturnsAllTags(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("Content-Type: got %q, want application/json", ct)
+		}
+
+		var tags []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		// testdata/tags has 8 entries (overloaded appears twice, lineonly once, etc.)
+		if len(tags) == 0 {
+			t.Fatal("expected non-empty tag list")
+		}
+		// Every entry must have _type == "tag"
+		for i, tag := range tags {
+			if tag["_type"] != "tag" {
+				t.Errorf("tags[%d]._type: got %v, want tag", i, tag["_type"])
+			}
+		}
+	})
+}
+
+func TestHandler_ListAllTags_CountMatchesFile(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var tags []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		// testdata/tags has 8 non-metadata lines
+		if len(tags) != 8 {
+			t.Errorf("expected 8 tags, got %d", len(tags))
+		}
+	})
+}
+
+func TestHandler_ListAllTags_ContextQueryParam(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/tags?context=sub")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var tags []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(tags) == 0 {
+			t.Fatal("expected non-empty tag list from sub context")
+		}
+		names := make(map[string]bool)
+		for _, tag := range tags {
+			if n, ok := tag["name"].(string); ok {
+				names[n] = true
+			}
+		}
+		if !names["SubFunc"] {
+			t.Errorf("expected SubFunc in sub context tags, got names: %v", names)
+		}
+	})
+}
+
+func TestHandler_ListAllTags_TagsFileNotFound(t *testing.T) {
+	withCwd(t, t.TempDir(), func() {
+		srv := httptest.NewServer(newHandler())
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
 }
 
 // ---- MarshalJSON tests ----
