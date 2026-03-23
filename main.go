@@ -189,18 +189,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok"}`)
 	})
 
-	mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) {
-		// Extract tag name from URL path: /tags/<name>
-		tagName := strings.TrimPrefix(r.URL.Path, "/tags/")
-		if tagName == "" {
-			http.Error(w, "tag name required", http.StatusBadRequest)
-			return
-		}
+	mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
+		tagName := r.PathValue("name")
 
 		// Resolve tags file path
 		context := r.URL.Query().Get("context")
