@@ -21,6 +21,10 @@ repos=(
 	github.com/containers/crun		# C
 	github.com/ceph/ceph			# C++
 	github.com/grpc/grpc			# C++
+	github.com/guzzle/guzzle		# PHP
+	github.com/MonitorControl/MonitorControl	# Swift
+	github.com/vlsi/ksar			# Java
+	github.com/square/okhttp		# Kotlin
 )
 
 ctags_cmd="/usr/local/u-ctags/bin/ctags -R --extras=+g --fields=+e"
