@@ -8,6 +8,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/rust"
+	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
@@ -35,6 +36,26 @@ var jsDefinitionTypes = map[string]bool{
 	"lexical_declaration":            true,
 	"variable_declaration":           true,
 	"export_statement":               true,
+}
+
+// tsDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in TypeScript source files. It includes all JS definition types
+// plus TypeScript-specific constructs.
+var tsDefinitionTypes = map[string]bool{
+	// shared with JavaScript
+	"function_declaration":           true,
+	"generator_function_declaration": true,
+	"class_declaration":              true,
+	"method_definition":              true,
+	"lexical_declaration":            true,
+	"variable_declaration":           true,
+	"export_statement":               true,
+	// TypeScript-specific
+	"interface_declaration":   true,
+	"type_alias_declaration":  true,
+	"enum_declaration":        true,
+	"abstract_class_declaration": true,
+	"internal_module":         true,
 }
 
 // findDefinitionNodeAtRow returns the outermost node of one of the given
@@ -95,6 +116,12 @@ func resolveEndWithTreeSitterJS(content []byte, startLine int) (int, error) {
 	return resolveEndWithTreeSitter(javascript.GetLanguage(), jsDefinitionTypes, content, startLine)
 }
 
+// resolveEndWithTreeSitterTS returns the 1-based end line of the TypeScript
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterTS(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(typescript.GetLanguage(), tsDefinitionTypes, content, startLine)
+}
+
 // isRustFile reports whether path is a Rust source file.
 func isRustFile(path string) bool {
 	return filepath.Ext(path) == ".rs"
@@ -103,4 +130,9 @@ func isRustFile(path string) bool {
 // isJSFile reports whether path is a JavaScript source file.
 func isJSFile(path string) bool {
 	return filepath.Ext(path) == ".js"
+}
+
+// isTSFile reports whether path is a TypeScript source file.
+func isTSFile(path string) bool {
+	return filepath.Ext(path) == ".ts"
 }

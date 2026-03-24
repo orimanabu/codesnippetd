@@ -5198,3 +5198,570 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
 
 ✻ Cooked for 6m 37s
 ```
+
+```
+❯ tree-sitterのサポート言語として、TypeScriptを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.ts`
+のときはtree sitterのTypeScript parserを使うようにしてください
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ testdata の構造と既存の go.mod を確認します。
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ Bash(ls /Users/ori/devel/src/github.com/orimanabu/codesnippetd/vendor/github.com/smacker/go-tree-sitter/ 2>/dev/null || find $(go env GOPATH)/pkg/mod/github.com/smac…)
+  ⎿  /Users/ori/go/pkg/mod/github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82/typescript
+     /Users/ori/go/pkg/mod/github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82/typescript/typescript
+
+⏺ Read 3 files (ctrl+o to expand)
+
+⏺ 構造を把握しました。実装します。
+
+  変更内容：
+  1. treesitter.go に TypeScript サポートを追加
+  2. main.go の resolveStartEnd で .ts を処理
+  3. testdata/ts/ にサンプルファイルとタグファイルを追加
+  4. treesitter_test.go にテストを追加
+  5. README 更新
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+       8    sitter "github.com/smacker/go-tree-sitter"
+       9    "github.com/smacker/go-tree-sitter/javascript"
+      10    "github.com/smacker/go-tree-sitter/rust"
+      11 +  "github.com/smacker/go-tree-sitter/typescript/typescript"
+      12  )
+      13
+      14  // rustDefinitionTypes is the set of tree-sitter node types treated as
+
+⏺ Update(treesitter.go)
+  ⎿  Added 20 lines
+      38    "export_statement":               true,
+      39  }
+      40
+      41 +// tsDefinitionTypes is the set of tree-sitter node types treated as
+      42 +// definitions in TypeScript source files. It includes all JS definition types
+      43 +// plus TypeScript-specific constructs.
+      44 +var tsDefinitionTypes = map[string]bool{
+      45 +  // shared with JavaScript
+      46 +  "function_declaration":           true,
+      47 +  "generator_function_declaration": true,
+      48 +  "class_declaration":              true,
+      49 +  "method_definition":              true,
+      50 +  "lexical_declaration":            true,
+      51 +  "variable_declaration":           true,
+      52 +  "export_statement":               true,
+      53 +  // TypeScript-specific
+      54 +  "interface_declaration":   true,
+      55 +  "type_alias_declaration":  true,
+      56 +  "enum_declaration":        true,
+      57 +  "abstract_class_declaration": true,
+      58 +  "internal_module":         true,
+      59 +}
+      60 +
+      61  // findDefinitionNodeAtRow returns the outermost node of one of the given
+      62  // definition types whose start row matches row (0-indexed). Falls back to
+      63  // any named node at that row if no definition-type node is found.
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter.go)
+  ⎿  Added 11 lines
+      116    return resolveEndWithTreeSitter(javascript.GetLanguage(), jsDefinitionTypes, content, startLine)
+      117  }
+      118
+      119 +// resolveEndWithTreeSitterTS returns the 1-based end line of the TypeScript
+      120 +// definition starting at startLine (1-based).
+      121 +func resolveEndWithTreeSitterTS(content []byte, startLine int) (int, error) {
+      122 +  return resolveEndWithTreeSitter(typescript.GetLanguage(), tsDefinitionTypes, content, startLine)
+      123 +}
+      124 +
+      125  // isRustFile reports whether path is a Rust source file.
+      126  func isRustFile(path string) bool {
+      127    return filepath.Ext(path) == ".rs"
+     ...
+      131  func isJSFile(path string) bool {
+      132    return filepath.Ext(path) == ".js"
+      133  }
+      134 +
+      135 +// isTSFile reports whether path is a TypeScript source file.
+      136 +func isTSFile(path string) bool {
+      137 +  return filepath.Ext(path) == ".ts"
+      138 +}
+
+⏺ 次に main.go の resolveStartEnd に TypeScript のケースを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      332        tsEnd, tsErr = resolveEndWithTreeSitterRust(data, startLine)
+      333      case isJSFile(tag.Path):
+      334        tsEnd, tsErr = resolveEndWithTreeSitterJS(data, startLine)
+      335 +    case isTSFile(tag.Path):
+      336 +      tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+      337      }
+      338      if tsErr == nil && tsEnd > 0 {
+      339        return startLine, tsEnd, nil
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ 次にテストデータを作成します。
+
+⏺ Bash(mkdir -p /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata/ts)
+  ⎿  Done
+
+⏺ Write(testdata/ts/sample.ts)
+  ⎿  Wrote 30 lines to testdata/ts/sample.ts
+       1 function greet(name: string): string {
+       2   return "Hello, " + name;
+       3 }
+       4
+       5 const add = (a: number, b: number): number => {
+       6   return a + b;
+       7 };
+       8
+       9 interface Shape {
+      10   area(): number;
+     … +20 lines (ctrl+o to expand)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Write(testdata/ts/tags)
+  ⎿  Wrote 9 lines to testdata/ts/tags
+      1 !_TAG_FILE_FORMAT       2       /extended format; --format=1 will not append ;" to lines/
+      2 !_TAG_FILE_SORTED       1       /0=unsorted, 1=sorted, 2=foldcase/
+      3 !_TAG_PROGRAM_NAME      Universal Ctags //
+      4 Circle  ts/sample.ts    /^class Circle implements Shape {$/;"   kind:class      line:18 language:TypeScript
+      5 Direction       ts/sample.ts    /^enum Direction {$/;"  kind:enum       line:25 language:TypeScript
+      6 Point   ts/sample.ts    /^type Point = {$/;"    kind:type       line:13 language:TypeScript
+      7 Shape   ts/sample.ts    /^interface Shape {$/;" kind:interface  line:9  language:TypeScript
+      8 add     ts/sample.ts    /^const add = (a: number, b: number): number => {$/;"   kind:constant   line:5  language:TypeScript
+      9 greet   ts/sample.ts    /^function greet(name: string): string {$/;"    kind:function   line:1  language:TypeScript
+
+⏺ 次にテストを書きます。まず tree-sitter が TypeScript の各ノードをどう解析するか確認します。
+
+⏺ Bash(cat > /tmp/ts_check_test.go << 'EOF'
+      package main…)
+  ⎿  line  1: end=3 err=<nil>
+     line  5: end=7 err=<nil>
+     line  9: end=11 err=<nil>
+     … +7 lines (ctrl+o to expand)
+
+⏺ Bash(rm /Users/ori/devel/src/github.com/orimanabu/codesnippetd/ts_check_test.go)
+  ⎿  Done
+
+⏺ 期待値が確認できました。テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 120 lines
+      179    }
+      180  }
+      181
+      182 +// sample TypeScript source used across unit tests.
+      183 +var tsSample = []byte(`function greet(name: string): string {
+      184 +  return "Hello, " + name;
+      185 +}
+      186 +
+      187 +const add = (a: number, b: number): number => {
+      188 +  return a + b;
+      189 +};
+      190 +
+      191 +interface Shape {
+      192 +  area(): number;
+      193 +}
+      194 +
+      195 +type Point = {
+      196 +  x: number;
+      197 +  y: number;
+      198 +};
+      199 +
+      200 +class Circle implements Shape {
+      201 +  constructor(private radius: number) {}
+      202 +  area(): number {
+      203 +    return Math.PI * this.radius ** 2;
+      204 +  }
+      205 +}
+      206 +
+      207 +enum Direction {
+      208 +  Up,
+      209 +  Down,
+      210 +  Left,
+      211 +  Right,
+      212 +}
+      213 +`)
+      214 +
+      215 +// ---- resolveEndWithTreeSitterTS tests ----
+      216 +
+      217 +func TestResolveEndWithTreeSitterTS_FunctionDeclaration(t *testing.T) {
+      218 +  // function greet starts at line 1, ends at line 3
+      219 +  end, err := resolveEndWithTreeSitterTS(tsSample, 1)
+      220 +  if err != nil {
+      221 +    t.Fatalf("unexpected error: %v", err)
+      222 +  }
+      223 +  if end != 3 {
+      224 +    t.Errorf("end: got %d, want 3", end)
+      225 +  }
+      226 +}
+      227 +
+      228 +func TestResolveEndWithTreeSitterTS_ArrowFunction(t *testing.T) {
+      229 +  // const add = ... starts at line 5, ends at line 7
+      230 +  end, err := resolveEndWithTreeSitterTS(tsSample, 5)
+      231 +  if err != nil {
+      232 +    t.Fatalf("unexpected error: %v", err)
+      233 +  }
+      234 +  if end != 7 {
+      235 +    t.Errorf("end: got %d, want 7", end)
+      236 +  }
+      237 +}
+      238 +
+      239 +func TestResolveEndWithTreeSitterTS_Interface(t *testing.T) {
+      240 +  // interface Shape starts at line 9, ends at line 11
+      241 +  end, err := resolveEndWithTreeSitterTS(tsSample, 9)
+      242 +  if err != nil {
+      243 +    t.Fatalf("unexpected error: %v", err)
+      244 +  }
+      245 +  if end != 11 {
+      246 +    t.Errorf("end: got %d, want 11", end)
+      247 +  }
+      248 +}
+      249 +
+      250 +func TestResolveEndWithTreeSitterTS_TypeAlias(t *testing.T) {
+      251 +  // type Point = { ... }; starts at line 13, ends at line 16
+      252 +  end, err := resolveEndWithTreeSitterTS(tsSample, 13)
+      253 +  if err != nil {
+      254 +    t.Fatalf("unexpected error: %v", err)
+      255 +  }
+      256 +  if end != 16 {
+      257 +    t.Errorf("end: got %d, want 16", end)
+      258 +  }
+      259 +}
+      260 +
+      261 +func TestResolveEndWithTreeSitterTS_Class(t *testing.T) {
+      262 +  // class Circle starts at line 18, ends at line 23
+      263 +  end, err := resolveEndWithTreeSitterTS(tsSample, 18)
+      264 +  if err != nil {
+      265 +    t.Fatalf("unexpected error: %v", err)
+      266 +  }
+      267 +  if end != 23 {
+      268 +    t.Errorf("end: got %d, want 23", end)
+      269 +  }
+      270 +}
+      271 +
+      272 +func TestResolveEndWithTreeSitterTS_Method(t *testing.T) {
+      273 +  // area() starts at line 20, ends at line 22
+      274 +  end, err := resolveEndWithTreeSitterTS(tsSample, 20)
+      275 +  if err != nil {
+      276 +    t.Fatalf("unexpected error: %v", err)
+      277 +  }
+      278 +  if end != 22 {
+      279 +    t.Errorf("end: got %d, want 22", end)
+      280 +  }
+      281 +}
+      282 +
+      283 +func TestResolveEndWithTreeSitterTS_Enum(t *testing.T) {
+      284 +  // enum Direction starts at line 25, ends at line 30
+      285 +  end, err := resolveEndWithTreeSitterTS(tsSample, 25)
+      286 +  if err != nil {
+      287 +    t.Fatalf("unexpected error: %v", err)
+      288 +  }
+      289 +  if end != 30 {
+      290 +    t.Errorf("end: got %d, want 30", end)
+      291 +  }
+      292 +}
+      293 +
+      294 +func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
+      295 +  // line 4 is blank — no definition starts there
+      296 +  _, err := resolveEndWithTreeSitterTS(tsSample, 4)
+      297 +  if err == nil {
+      298 +    t.Fatal("expected error for blank line with no definition")
+      299 +  }
+      300 +}
+      301 +
+      302  // ---- isRustFile / isJSFile tests ----
+      303
+      304  func TestIsRustFile(t *testing.T) {
+
+⏺ 次に isTSFile テストと HTTP ハンドラ統合テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 19 lines
+      339    }
+      340  }
+      341
+      342 +func TestIsTSFile(t *testing.T) {
+      343 +  cases := []struct {
+      344 +    path string
+      345 +    want bool
+      346 +  }{
+      347 +    {"app.ts", true},
+      348 +    {"src/index.ts", true},
+      349 +    {"main.go", false},
+      350 +    {"main.rs", false},
+      351 +    {"app.js", false},
+      352 +    {"noextension", false},
+      353 +  }
+      354 +  for _, c := range cases {
+      355 +    if got := isTSFile(c.path); got != c.want {
+      356 +      t.Errorf("isTSFile(%q) = %v, want %v", c.path, got, c.want)
+      357 +    }
+      358 +  }
+      359 +}
+      360 +
+      361  // ---- HTTP handler integration tests for Rust files ----
+      362
+      363  func TestSnippetHandler_RustFile_UsesTreeSitter(t *testing.T) {
+
+⏺ HTTP ハンドラ統合テストをファイル末尾に追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 177 lines
+      568      }
+      569    })
+      570  }
+      571 +
+      572 +// ---- HTTP handler integration tests for TypeScript files ----
+      573 +
+      574 +func TestSnippetHandler_TSFile_FunctionDeclaration(t *testing.T) {
+      575 +  withCwd(t, "testdata", func() {
+      576 +    srv := httptest.NewServer(newHandler(true))
+      577 +    defer srv.Close()
+      578 +
+      579 +    resp, err := http.Get(srv.URL + "/snippets/greet?context=ts")
+      580 +    if err != nil {
+      581 +      t.Fatal(err)
+      582 +    }
+      583 +    defer resp.Body.Close()
+      584 +
+      585 +    if resp.StatusCode != http.StatusOK {
+      586 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      587 +    }
+      588 +
+      589 +    var snippets []Snippet
+      590 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      591 +      t.Fatalf("decode: %v", err)
+      592 +    }
+      593 +    if len(snippets) != 1 {
+      594 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      595 +    }
+      596 +    s := snippets[0]
+      597 +    if s.Start != 1 || s.End != 3 {
+      598 +      t.Errorf("Start/End: got %d/%d, want 1/3", s.Start, s.End)
+      599 +    }
+      600 +    if !strings.Contains(s.Code, "function greet") {
+      601 +      t.Errorf("Code should contain function greet, got %q", s.Code)
+      602 +    }
+      603 +    if strings.Contains(s.Code, "const add") {
+      604 +      t.Errorf("Code should not extend past end of function, got %q", s.Code)
+      605 +    }
+      606 +  })
+      607 +}
+      608 +
+      609 +func TestSnippetHandler_TSFile_Interface(t *testing.T) {
+      610 +  withCwd(t, "testdata", func() {
+      611 +    srv := httptest.NewServer(newHandler(true))
+      612 +    defer srv.Close()
+      613 +
+      614 +    resp, err := http.Get(srv.URL + "/snippets/Shape?context=ts")
+      615 +    if err != nil {
+      616 +      t.Fatal(err)
+      617 +    }
+      618 +    defer resp.Body.Close()
+      619 +
+      620 +    if resp.StatusCode != http.StatusOK {
+      621 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      622 +    }
+      623 +
+      624 +    var snippets []Snippet
+      625 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      626 +      t.Fatalf("decode: %v", err)
+      627 +    }
+      628 +    if len(snippets) != 1 {
+      629 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      630 +    }
+      631 +    if snippets[0].Start != 9 || snippets[0].End != 11 {
+      632 +      t.Errorf("Start/End: got %d/%d, want 9/11", snippets[0].Start, snippets[0].End)
+      633 +    }
+      634 +  })
+      635 +}
+      636 +
+      637 +func TestSnippetHandler_TSFile_TypeAlias(t *testing.T) {
+      638 +  withCwd(t, "testdata", func() {
+      639 +    srv := httptest.NewServer(newHandler(true))
+      640 +    defer srv.Close()
+      641 +
+      642 +    resp, err := http.Get(srv.URL + "/snippets/Point?context=ts")
+      643 +    if err != nil {
+      644 +      t.Fatal(err)
+      645 +    }
+      646 +    defer resp.Body.Close()
+      647 +
+      648 +    if resp.StatusCode != http.StatusOK {
+      649 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      650 +    }
+      651 +
+      652 +    var snippets []Snippet
+      653 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      654 +      t.Fatalf("decode: %v", err)
+      655 +    }
+      656 +    if len(snippets) != 1 {
+      657 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      658 +    }
+      659 +    if snippets[0].Start != 13 || snippets[0].End != 16 {
+      660 +      t.Errorf("Start/End: got %d/%d, want 13/16", snippets[0].Start, snippets[0].End)
+      661 +    }
+      662 +  })
+      663 +}
+      664 +
+      665 +func TestSnippetHandler_TSFile_Class(t *testing.T) {
+      666 +  withCwd(t, "testdata", func() {
+      667 +    srv := httptest.NewServer(newHandler(true))
+      668 +    defer srv.Close()
+      669 +
+      670 +    resp, err := http.Get(srv.URL + "/snippets/Circle?context=ts")
+      671 +    if err != nil {
+      672 +      t.Fatal(err)
+      673 +    }
+      674 +    defer resp.Body.Close()
+      675 +
+      676 +    if resp.StatusCode != http.StatusOK {
+      677 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      678 +    }
+      679 +
+      680 +    var snippets []Snippet
+      681 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      682 +      t.Fatalf("decode: %v", err)
+      683 +    }
+      684 +    if len(snippets) != 1 {
+      685 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      686 +    }
+      687 +    if snippets[0].Start != 18 || snippets[0].End != 23 {
+      688 +      t.Errorf("Start/End: got %d/%d, want 18/23", snippets[0].Start, snippets[0].End)
+      689 +    }
+      690 +  })
+      691 +}
+      692 +
+      693 +func TestSnippetHandler_TSFile_Enum(t *testing.T) {
+      694 +  withCwd(t, "testdata", func() {
+      695 +    srv := httptest.NewServer(newHandler(true))
+      696 +    defer srv.Close()
+      697 +
+      698 +    resp, err := http.Get(srv.URL + "/snippets/Direction?context=ts")
+      699 +    if err != nil {
+      700 +      t.Fatal(err)
+      701 +    }
+      702 +    defer resp.Body.Close()
+      703 +
+      704 +    if resp.StatusCode != http.StatusOK {
+      705 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      706 +    }
+      707 +
+      708 +    var snippets []Snippet
+      709 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      710 +      t.Fatalf("decode: %v", err)
+      711 +    }
+      712 +    if len(snippets) != 1 {
+      713 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      714 +    }
+      715 +    if snippets[0].Start != 25 || snippets[0].End != 30 {
+      716 +      t.Errorf("Start/End: got %d/%d, want 25/30", snippets[0].Start, snippets[0].End)
+      717 +    }
+      718 +  })
+      719 +}
+      720 +
+      721 +func TestLinesHandler_TSFile_UsesTreeSitter(t *testing.T) {
+      722 +  withCwd(t, "testdata", func() {
+      723 +    srv := httptest.NewServer(newHandler(true))
+      724 +    defer srv.Close()
+      725 +
+      726 +    resp, err := http.Get(srv.URL + "/lines/add?context=ts")
+      727 +    if err != nil {
+      728 +      t.Fatal(err)
+      729 +    }
+      730 +    defer resp.Body.Close()
+      731 +
+      732 +    if resp.StatusCode != http.StatusOK {
+      733 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      734 +    }
+      735 +
+      736 +    var ranges []LineRange
+      737 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      738 +      t.Fatalf("decode: %v", err)
+      739 +    }
+      740 +    if len(ranges) != 1 {
+      741 +      t.Fatalf("expected 1 range, got %d", len(ranges))
+      742 +    }
+      743 +    if ranges[0].Start != 5 || ranges[0].End != 7 {
+      744 +      t.Errorf("Start/End: got %d/%d, want 5/7", ranges[0].Start, ranges[0].End)
+      745 +    }
+      746 +  })
+      747 +}
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.618s
+
+⏺ 全テストがパスしました。最後に README と go.mod を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      20  | `-l` | — | Shorthand for `-listen` |
+      21  | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 -| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs` and JavaScript `.js`) |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, and TypeScript `.ts`) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      154  The end line is resolved in the following order of priority:
+      155
+      156  1. The `end` extension field recorded in the ctags tags file.
+      157 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs` or `.js`).
+      157 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, or `.ts`).
+      158  3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
+      159
+      160  **Path Parameters**
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      209  The end line is resolved in the following order of priority:
+      210
+      211  1. The `end` extension field recorded in the ctags tags file.
+      212 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs` or `.js`).
+      212 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, or `.ts`).
+      213  3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
+      214
+      215  **Path Parameters**
+
+⏺ Bash(go mod tidy 2>&1)
+  ⎿  (No output)
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.363s
+
+⏺ 全テストがパスしました。変更の概要です。
+
+  treesitter.go
+  - github.com/smacker/go-tree-sitter/typescript/typescript をインポート
+  - tsDefinitionTypes: JS の定義タイプに加え TypeScript 固有の interface_declaration, type_alias_declaration, enum_declaration, abstract_class_declaration, internal_module を追加
+  - resolveEndWithTreeSitterTS() 関数を追加
+  - isTSFile() 関数を追加（.ts 拡張子を判定）
+
+  main.go
+  - resolveStartEnd の switch に case isTSFile(tag.Path) を追加
+
+  treesitter_test.go
+  - tsSample 変数（TypeScript サンプルコード）を追加
+  - ユニットテスト 8 本（関数/アロー関数/インターフェース/型エイリアス/クラス/メソッド/enum/空行エラー）
+  - isTSFile のテーブルテスト
+  - HTTP ハンドラ統合テスト 6 本（context=ts で各構文を検証）
+
+  テストデータ
+  - testdata/ts/sample.ts（関数・インターフェース・型エイリアス・クラス・enum を含む）
+  - testdata/ts/tags（end フィールドなしで tree-sitter に解決させる）
+
+✻ Cogitated for 3m 49s
+```

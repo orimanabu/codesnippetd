@@ -179,6 +179,126 @@ func TestResolveEndWithTreeSitterJS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample TypeScript source used across unit tests.
+var tsSample = []byte(`function greet(name: string): string {
+  return "Hello, " + name;
+}
+
+const add = (a: number, b: number): number => {
+  return a + b;
+};
+
+interface Shape {
+  area(): number;
+}
+
+type Point = {
+  x: number;
+  y: number;
+};
+
+class Circle implements Shape {
+  constructor(private radius: number) {}
+  area(): number {
+    return Math.PI * this.radius ** 2;
+  }
+}
+
+enum Direction {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+`)
+
+// ---- resolveEndWithTreeSitterTS tests ----
+
+func TestResolveEndWithTreeSitterTS_FunctionDeclaration(t *testing.T) {
+	// function greet starts at line 1, ends at line 3
+	end, err := resolveEndWithTreeSitterTS(tsSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 3 {
+		t.Errorf("end: got %d, want 3", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_ArrowFunction(t *testing.T) {
+	// const add = ... starts at line 5, ends at line 7
+	end, err := resolveEndWithTreeSitterTS(tsSample, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 7 {
+		t.Errorf("end: got %d, want 7", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_Interface(t *testing.T) {
+	// interface Shape starts at line 9, ends at line 11
+	end, err := resolveEndWithTreeSitterTS(tsSample, 9)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 11 {
+		t.Errorf("end: got %d, want 11", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_TypeAlias(t *testing.T) {
+	// type Point = { ... }; starts at line 13, ends at line 16
+	end, err := resolveEndWithTreeSitterTS(tsSample, 13)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 16 {
+		t.Errorf("end: got %d, want 16", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_Class(t *testing.T) {
+	// class Circle starts at line 18, ends at line 23
+	end, err := resolveEndWithTreeSitterTS(tsSample, 18)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 23 {
+		t.Errorf("end: got %d, want 23", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_Method(t *testing.T) {
+	// area() starts at line 20, ends at line 22
+	end, err := resolveEndWithTreeSitterTS(tsSample, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 22 {
+		t.Errorf("end: got %d, want 22", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_Enum(t *testing.T) {
+	// enum Direction starts at line 25, ends at line 30
+	end, err := resolveEndWithTreeSitterTS(tsSample, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 30 {
+		t.Errorf("end: got %d, want 30", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
+	// line 4 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterTS(tsSample, 4)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // ---- isRustFile / isJSFile tests ----
 
 func TestIsRustFile(t *testing.T) {
@@ -215,6 +335,25 @@ func TestIsJSFile(t *testing.T) {
 	for _, c := range cases {
 		if got := isJSFile(c.path); got != c.want {
 			t.Errorf("isJSFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsTSFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"app.ts", true},
+		{"src/index.ts", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"app.js", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isTSFile(c.path); got != c.want {
+			t.Errorf("isTSFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -426,6 +565,183 @@ func TestLinesHandler_JSFile_UsesTreeSitter(t *testing.T) {
 		}
 		if ranges[0].Start != 14 || ranges[0].End != 16 {
 			t.Errorf("Start/End: got %d/%d, want 14/16", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for TypeScript files ----
+
+func TestSnippetHandler_TSFile_FunctionDeclaration(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 3 {
+			t.Errorf("Start/End: got %d/%d, want 1/3", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "function greet") {
+			t.Errorf("Code should contain function greet, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "const add") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_TSFile_Interface(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Shape?context=ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 9 || snippets[0].End != 11 {
+			t.Errorf("Start/End: got %d/%d, want 9/11", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_TSFile_TypeAlias(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Point?context=ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 13 || snippets[0].End != 16 {
+			t.Errorf("Start/End: got %d/%d, want 13/16", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_TSFile_Class(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Circle?context=ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 18 || snippets[0].End != 23 {
+			t.Errorf("Start/End: got %d/%d, want 18/23", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_TSFile_Enum(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Direction?context=ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 25 || snippets[0].End != 30 {
+			t.Errorf("Start/End: got %d/%d, want 25/30", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_TSFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/add?context=ts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 5 || ranges[0].End != 7 {
+			t.Errorf("Start/End: got %d/%d, want 5/7", ranges[0].Start, ranges[0].End)
 		}
 	})
 }

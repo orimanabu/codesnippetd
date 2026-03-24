@@ -332,6 +332,8 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, startLine)
 		case isJSFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterJS(data, startLine)
+		case isTSFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
 		}
 		if tsErr == nil && tsEnd > 0 {
 			return startLine, tsEnd, nil
