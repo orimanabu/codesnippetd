@@ -3731,3 +3731,513 @@ HTTP."の文の直後に書いてください。
 
 ⏺ 追記しました。
 ```
+
+```
+❯ 一部の言語はuniversal
+ctagsではendが取得できないため、tree-sitterを使うように改良します。まず始めにRustに対応します。ファイルの拡張子が.rsの場合は、Rust言語と判断し、tree-sitterのRust
+parserを使って関数の定義部分およびその開始行、終了行の番号を取得するようにしてください
+
+⏺ まず tree-sitter の Go バインディングと Rust 文法を確認し、依存関係を追加します。
+
+⏺ Bash(go get github.com/smacker/go-tree-sitter@latest 2>&1)
+  ⎿  go: downloading github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
+     go: added github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
+
+⏺ Bash(ls $(go env GOPATH)/pkg/mod/github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82/rust/ 2>/dev/null | head -5)
+  ⎿  binding_test.go
+     binding.go
+     parser.c
+     … +2 lines (ctrl+o to expand)
+
+⏺ Rust 文法も同梱されています。実装に進みます。tree-sitter 関連のコードは treesitter.go に分けます。
+
+⏺ Bash(ls $(go env GOPATH)/pkg/mod/github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82/rust/binding.go | xargs head -30)
+  ⎿  package rust
+
+     //#include "parser.h"
+     … +12 lines (ctrl+o to expand)
+
+⏺ Write(treesitter.go)
+  ⎿  Wrote 68 lines to treesitter.go
+      1 package main
+      2
+      3 import (
+      4         "fmt"
+      5         "path/filepath"
+      6
+      7         sitter "github.com/smacker/go-tree-sitter"
+      8         "github.com/smacker/go-tree-sitter/rust"
+      9 )
+     … +58 lines (ctrl+o to expand)
+
+⏺ 次に resolveStartEnd で .rs ファイルかつ end フィールドがない場合に tree-sitter を呼ぶよう変更します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 14 lines, removed 2 lines
+      308      }
+      309    }
+      310
+      311 -  // end field absent: fall back to EOF, reading the file if not already read.
+      311 +  // end field absent: read the file (if not already read) and try tree-sitter for
+      312 +  // Rust files, otherwise fall back to EOF.
+      313 +  var data []byte
+      314    if lines == nil {
+      313 -    data, readErr := os.ReadFile(tag.Path)
+      315 +    var readErr error
+      316 +    data, readErr = os.ReadFile(tag.Path)
+      317      if readErr != nil {
+      318        return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+      319      }
+      320      lines = strings.Split(string(data), "\n")
+      321 +  } else {
+      322 +    data = []byte(strings.Join(lines, "\n"))
+      323    }
+      324 +
+      325 +  if isRustFile(tag.Path) {
+      326 +    if end, tsErr := resolveEndWithTreeSitterRust(data, startLine); tsErr == nil {
+      327 +      return startLine, end, nil
+      328 +    }
+      329 +  }
+      330 +
+      331    return startLine, len(lines), nil
+      332  }
+      333
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ ビルド OK。使われていない rustDefinitionTypes は findDefinitionNodeAtRow で活用するよう修正し、parser.Parse も ParseCtx に変更します。
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+      1  package main
+      2
+      3  import (
+      4 +  "context"
+      5    "fmt"
+      6    "path/filepath"
+      7
+
+⏺ Update(treesitter.go)
+  ⎿  Added 10 lines, removed 6 lines
+      24    "mod_item":                true,
+      25  }
+      26
+      27 -// findDefinitionNodeAtRow returns the outermost named node whose start row
+      28 -// matches row (0-indexed). It preferentially returns a definition-type node.
+      27 +// findDefinitionNodeAtRow returns the outermost definition-type node whose
+      28 +// start row matches row (0-indexed). Falls back to any named node if no
+      29 +// definition node is found.
+      30  func findDefinitionNodeAtRow(n *sitter.Node, row uint32) *sitter.Node {
+      30 -  if n.StartPoint().Row == row && n.IsNamed() {
+      31 +  if n.StartPoint().Row == row && n.IsNamed() && rustDefinitionTypes[n.Type()] {
+      32      return n
+      33    }
+      33 -  count := int(n.ChildCount())
+      34 -  for i := 0; i < count; i++ {
+      34 +  var fallback *sitter.Node
+      35 +  for i := range int(n.ChildCount()) {
+      36      child := n.Child(i)
+      37      if child.StartPoint().Row > row {
+      38        break
+     ...
+      43      if result := findDefinitionNodeAtRow(child, row); result != nil {
+      44        return result
+      45      }
+      46 +    if child.StartPoint().Row == row && child.IsNamed() && fallback == nil {
+      47 +      fallback = child
+      48 +    }
+      49    }
+      46 -  return nil
+      50 +  return fallback
+      51  }
+      52
+      53  // resolveEndWithTreeSitterRust parses a Rust source file and returns the
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter.go)
+  ⎿  Added 4 lines, removed 1 line
+      56    parser := sitter.NewParser()
+      57    parser.SetLanguage(rust.GetLanguage())
+      58
+      59 -  tree := parser.Parse(nil, content)
+      59 +  tree, err := parser.ParseCtx(context.Background(), nil, content)
+      60 +  if err != nil {
+      61 +    return 0, fmt.Errorf("tree-sitter parse: %w", err)
+      62 +  }
+      63    defer tree.Close()
+      64
+      65    targetRow := uint32(startLine - 1) // tree-sitter uses 0-based rows
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ 動作を手動で確認してからテストを書きます。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Write(/tmp/ts_probe/main.go)
+  ⎿  Wrote 25 lines to ../../../../../../../tmp/ts_probe/main.go
+       1 package main
+       2
+       3 import (
+       4        "context"
+       5        "fmt"
+       6        "os"
+       7
+       8        sitter "github.com/smacker/go-tree-sitter"
+       9        "github.com/smacker/go-tree-sitter/rust"
+      10 )
+     … +15 lines (ctrl+o to expand)
+
+⏺ Bash(cd /tmp/ts_probe && go mod init probe && go get github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82 && go run . 2>&1)
+  ⎿  go: creating new go.mod: module probe
+     go: to add module requirements and sums:
+        go mod tidy
+     … +5 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /Users/ori/devel/src/github.com/orimanabu/codesnippetd
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ tree-sitter が正しく node タイプと行番号を返すことを確認しました。テストデータ用の Rust ファイルと tags を作成し、テストを書きます。
+
+⏺ Write(testdata/rust/sample.rs)
+  ⎿  Wrote 18 lines to testdata/rust/sample.rs
+       1 fn greet(name: &str) -> String {
+       2     format!("Hello, {}!", name)
+       3 }
+       4
+       5 fn add(a: i32, b: i32) -> i32 {
+       6     a + b
+       7 }
+       8
+       9 struct RustPoint {
+      10     x: f64,
+     … +8 lines (ctrl+o to expand)
+
+⏺ end フィールドを意図的に含まない tags ファイルを作成します（tree-sitter フォールバックのテスト用）。
+
+⏺ Write(testdata/rust/tags)
+  ⎿  Wrote 7 lines to testdata/rust/tags
+      1 !_TAG_FILE_FORMAT       2       /extended format; --format=1 will not append ;" to lines/
+      2 !_TAG_FILE_SORTED       1       /0=unsorted, 1=sorted, 2=foldcase/
+      3 !_TAG_PROGRAM_NAME      Universal Ctags //
+      4 RustPoint       rust/sample.rs  /^struct RustPoint {$/;"        kind:struct     line:9  language:Rust
+      5 add     rust/sample.rs  /^fn add(a: i32, b: i32) -> i32 {$/;"   kind:function   line:5  language:Rust
+      6 greet   rust/sample.rs  /^fn greet(name: &str) -> String {$/;"  kind:function   line:1  language:Rust
+      7 new     rust/sample.rs  /^    fn new(x: f64, y: f64) -> Self {$/;"      kind:method     line:15 language:Rust
+
+⏺ テストファイルを作成します。
+
+⏺ Write(treesitter_test.go)
+  ⎿  Wrote 217 lines to treesitter_test.go
+      1 package main
+      2
+      3 import (
+      4         "encoding/json"
+      5         "net/http"
+      6         "net/http/httptest"
+      7         "strings"
+      8         "testing"
+      9 )
+     … +207 lines (ctrl+o to expand)
+
+⏺ Bash(go test . -v -run "TestResolveEnd|TestIsRust|TestSnippetHandler_Rust|TestLinesHandler_Rust" 2>&1)
+  ⎿  Error: Exit code 1
+     # github.com/orimanabu/codesnippetd
+     # [github.com/orimanabu/codesnippetd]
+     ./treesitter_test.go:148:4: (*testing.common).Errorf format %d reads arg #1, but call has 0 args
+     ./treesitter_test.go:186:4: (*testing.common).Errorf format %d reads arg #1, but call has 0 args
+     FAIL       github.com/orimanabu/codesnippetd [build failed]
+     FAIL
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 1 line, removed 1 line
+      145        t.Errorf("Start: got %d, want 1", s.Start)
+      146      }
+      147      if s.End != 3 {
+      148 -      t.Errorf("End: got %d, want 3 (tree-sitter should resolve this)")
+      148 +      t.Errorf("End: got %d, want 3 (tree-sitter should resolve this)", s.End)
+      149      }
+      150      if !strings.Contains(s.Code, "fn greet") {
+      151        t.Errorf("Code should contain fn greet, got %q", s.Code)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 1 line, removed 1 line
+      183        t.Errorf("Start: got %d, want 5", lr.Start)
+      184      }
+      185      if lr.End != 7 {
+      186 -      t.Errorf("End: got %d, want 7 (tree-sitter should resolve this)")
+      186 +      t.Errorf("End: got %d, want 7 (tree-sitter should resolve this)", lr.End)
+      187      }
+      188    })
+      189  }
+
+⏺ Bash(go test . -v -run "TestResolveEnd|TestIsRust|TestSnippetHandler_Rust|TestLinesHandler_Rust" 2>&1)
+  ⎿  === RUN   TestResolveEndWithTreeSitterRust_TopLevelFunction
+     --- PASS: TestResolveEndWithTreeSitterRust_TopLevelFunction (0.00s)
+     === RUN   TestResolveEndWithTreeSitterRust_SecondFunction
+     … +22 lines (ctrl+o to expand)
+
+⏺ 全テスト PASS。既存テストも壊れていないか確認します。
+
+⏺ Bash(go test . 2>&1 | tail -3)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.307s
+
+⏺ 全テスト PASS。実装の概要です：
+
+  treesitter.go（新規）:
+  - rustDefinitionTypes — Rust の定義ノード型セット（function_item、struct_item、impl_item 等）
+  - findDefinitionNodeAtRow(node, row) — 指定行から始まる定義ノードを AST から再帰探索
+  - resolveEndWithTreeSitterRust(content, startLine) — Rust ファイルを tree-sitter でパースし、startLine の定義の終了行を返す
+  - isRustFile(path) — 拡張子が .rs かどうかを判定
+
+  main.go の変更点（resolveStartEnd）:
+  - end フィールドが tags に存在しない場合、.rs ファイルなら resolveEndWithTreeSitterRust を試みる
+  - tree-sitter で取得できれば EOF フォールバックより優先
+
+  テストデータ:
+  - testdata/rust/sample.rs — 関数・struct・impl を含む Rust サンプル
+  - testdata/rust/tags — end フィールドなし（tree-sitter フォールバックを意図的にテスト）
+
+✻ Cogitated for 3m 52s
+```
+
+```
+❯ コマンドラインオプションに `--tree-sitter` を追加し、このオプションが指定されたとき、かつisRustFile()が真の場合にtreesitterにフォールバックするようにしてください
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ useTreeSitter bool を resolveStartEnd → snippetForTag / lineRangeForTag → ハンドラーと通します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 4 lines, removed 2 lines
+      280
+      281  // resolveStartEnd returns the start and end line numbers for a Tag.
+      282  // The source file is read only when pattern matching is needed (tag.Line == 0).
+      283 -// If the "end" extension field is absent, endLine defaults to the total line count of the file.
+      284 -func resolveStartEnd(tag Tag) (startLine, endLine int, err error) {
+      283 +// If the "end" extension field is absent and useTreeSitter is true and the file
+      284 +// is a Rust source file, tree-sitter is used to determine the end line.
+      285 +// Otherwise endLine defaults to the total line count of the file.
+      286 +func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err error) {
+      287    needFile := tag.Line == 0 && tag.Pattern != ""
+      288
+      289    var lines []string
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      324      data = []byte(strings.Join(lines, "\n"))
+      325    }
+      326
+      327 -  if isRustFile(tag.Path) {
+      327 +  if useTreeSitter && isRustFile(tag.Path) {
+      328      if end, tsErr := resolveEndWithTreeSitterRust(data, startLine); tsErr == nil {
+      329        return startLine, end, nil
+      330      }
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ snippetForTag と lineRangeForTag にも useTreeSitter を通します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      334  }
+      335
+      336  // snippetForTag resolves a Snippet from a Tag by reading the source file.
+      337 -func snippetForTag(tag Tag) (Snippet, error) {
+      338 -  startLine, endLine, err := resolveStartEnd(tag)
+      337 +func snippetForTag(tag Tag, useTreeSitter bool) (Snippet, error) {
+      338 +  startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
+      339    if err != nil {
+      340      return Snippet{}, err
+      341    }
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      357
+      358  // lineRangeForTag resolves the start and end line numbers for a Tag without reading
+      359  // the full file content (the file is read only when pattern matching is needed).
+      360 -func lineRangeForTag(tag Tag) (LineRange, error) {
+      361 -  startLine, endLine, err := resolveStartEnd(tag)
+      360 +func lineRangeForTag(tag Tag, useTreeSitter bool) (LineRange, error) {
+      361 +  startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
+      362    if err != nil {
+      363      return LineRange{}, err
+      364    }
+  ⎿  Found 7 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ main.go のハンドラーと main_test.go の呼び出し箇所をまとめて更新します。まず main.go のハンドラー部分を確認します。
+
+⏺ Read 1 file (ctrl+o to expand)
+  ⎿  Found 7 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ --tree-sitter フラグを追加し、ハンドラーに useTreeSitter を渡します。
+
+⏺ Update(main.go)
+  ⎿  Added 1 line
+      375    flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
+      376    port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
+      377    flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
+      378 +  useTreeSitter := flag.Bool("tree-sitter", false, "use tree-sitter to resolve end lines when ctags does not provide them")
+      379    flag.Parse()
+      380
+      381    listenAddr := *addr
+
+⏺ main.go 内で snippetForTag と lineRangeForTag を呼んでいる箇所を更新します。
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      464
+      465      var snippets []Snippet
+      466      for _, tag := range results {
+      467 -      s, err := snippetForTag(tag)
+      467 +      s, err := snippetForTag(tag, *useTreeSitter)
+      468        if err != nil {
+      469          http.Error(w, err.Error(), http.StatusInternalServerError)
+      470          return
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      500
+      501      var ranges []LineRange
+      502      for _, tag := range results {
+      503 -      lr, err := lineRangeForTag(tag)
+      503 +      lr, err := lineRangeForTag(tag, *useTreeSitter)
+      504        if err != nil {
+      505          http.Error(w, err.Error(), http.StatusInternalServerError)
+      506          return
+
+⏺ 次に main_test.go の呼び出し箇所を更新します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(sed -i '' \
+        's/snippetForTag(tag)/snippetForTag(tag, false)/g; s/lineRangeForTag(tag)/lineRangeForTag(tag, false)/g' \…)
+  ⎿  (No output)
+
+⏺ treesitter_test.go の呼び出しも更新します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ treesitter_test.go は直接呼んでいないので問題なし。テストハンドラー (newHandler) の snippetForTag/lineRangeForTag も false になったので、Rust テストが tree-sitter を使うには true
+   を渡す必要があります。newHandler を useTreeSitter bool を受け取るよう変更します。
+
+⏺ Searched for 2 patterns (ctrl+o to expand)
+
+⏺ newHandler を useTreeSitter bool を受け取る形に変更します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      182    fn()
+      183  }
+      184
+      185 -func newHandler() http.Handler {
+      185 +func newHandler(useTreeSitter bool) http.Handler {
+      186    mux := http.NewServeMux()
+      187    mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+      188      w.Header().Set("Content-Type", "application/json")
+
+⏺ newHandler 内の snippetForTag(tag, false) / lineRangeForTag(tag, false) をパラメータ使用に変更します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      252
+      253      var snippets []Snippet
+      254      for _, tag := range results {
+      255 -      s, err := snippetForTag(tag, false)
+      255 +      s, err := snippetForTag(tag, useTreeSitter)
+      256        if err != nil {
+      257          http.Error(w, err.Error(), http.StatusInternalServerError)
+      258          return
+  ⎿  Found 13 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      284
+      285      var ranges []LineRange
+      286      for _, tag := range results {
+      287 -      lr, err := lineRangeForTag(tag, false)
+      287 +      lr, err := lineRangeForTag(tag, useTreeSitter)
+      288        if err != nil {
+      289          http.Error(w, err.Error(), http.StatusInternalServerError)
+      290          return
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 既存テストは全て false、tree-sitter テストは true に一括置換します。
+
+⏺ Bash(sed -i '' 's/newHandler()/newHandler(false)/g' \
+        /Users/ori/devel/src/github.com/orimanabu/codesnippetd/main_test.go)
+  ⎿  (No output)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ treesitter_test.go の tree-sitter テストは newHandler(true) に変更します。
+
+⏺ Bash(sed -i '' 's/newHandler(false)/newHandler(true)/g' \
+        /Users/ori/devel/src/github.com/orimanabu/codesnippetd/treesitter_test.go)
+  ⎿  (No output)
+
+⏺ Bash(go test . 2>&1 | tail -5)
+  ⎿  ./treesitter_test.go:193:29: not enough arguments in call to newHandler
+        have ()
+        want (bool)
+     … +2 lines (ctrl+o to expand)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(sed -i '' 's/newHandler()/newHandler(true)/g' \
+        /Users/ori/devel/src/github.com/orimanabu/codesnippetd/treesitter_test.go)
+  ⎿  (No output)
+
+⏺ Bash(go test . -v 2>&1 | grep -E "^(=== RUN|--- (PASS|FAIL|SKIP)|FAIL|ok)")
+  ⎿  === RUN   TestParseLine_SkipsMetadataLines
+     --- PASS: TestParseLine_SkipsMetadataLines (0.00s)
+     === RUN   TestParseLine_BasicFunction
+     … +44 lines (ctrl+o to expand)
+
+⏺ 全テスト PASS。README も更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 2 lines, removed 1 line
+      18  |------|---------|-------------|
+      19  | `-listen`, `--listen` | `:8999` | TCP address to listen on (host:port) |
+      20  | `-l` | — | Shorthand for `-listen` |
+      21 -| `-port`, `--port` | — | Port number to listen on; overrides `-addr` when set |
+      21 +| `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (currently supports Rust) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ 完了です。変更の概要：
+
+  main.go:
+  - --tree-sitter フラグを追加（デフォルト false）
+  - resolveStartEnd(tag, useTreeSitter bool) — フラグが true かつ isRustFile() が真の場合のみ tree-sitter にフォールバック
+  - snippetForTag(tag, useTreeSitter bool) / lineRangeForTag(tag, useTreeSitter bool) — フラグを引数として受け渡し
+
+  動作:
+  # tree-sitter なし（デフォルト）— Rust ファイルも EOF フォールバック
+  ./codesnippetd
+
+  # tree-sitter あり — .rs ファイルの end 行を tree-sitter で解決
+  ./codesnippetd --tree-sitter
+
+✻ Brewed for 2m 40s
+```

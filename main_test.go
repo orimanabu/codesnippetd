@@ -182,7 +182,7 @@ func withCwd(t *testing.T, dir string, fn func()) {
 	fn()
 }
 
-func newHandler() http.Handler {
+func newHandler(useTreeSitter bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -252,7 +252,7 @@ func newHandler() http.Handler {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(tag)
+			s, err := snippetForTag(tag, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -284,7 +284,7 @@ func newHandler() http.Handler {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(tag)
+			lr, err := lineRangeForTag(tag, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -300,7 +300,7 @@ func newHandler() http.Handler {
 
 func TestHandler_ReturnsTagJSON(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/MyStruct")
@@ -340,7 +340,7 @@ func TestHandler_ReturnsTagJSON(t *testing.T) {
 
 func TestHandler_MultipleTagsSameName(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/overloaded")
@@ -365,7 +365,7 @@ func TestHandler_MultipleTagsSameName(t *testing.T) {
 
 func TestHandler_TagNotFound(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/NonExistentTag")
@@ -382,7 +382,7 @@ func TestHandler_TagNotFound(t *testing.T) {
 
 func TestHandler_MissingTagName(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/")
@@ -399,7 +399,7 @@ func TestHandler_MissingTagName(t *testing.T) {
 
 func TestHandler_TagsFileNotFound(t *testing.T) {
 	withCwd(t, t.TempDir(), func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/anything")
@@ -416,7 +416,7 @@ func TestHandler_TagsFileNotFound(t *testing.T) {
 
 func TestHandler_ContextQueryParam(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/SubFunc?context=sub")
@@ -444,7 +444,7 @@ func TestHandler_ContextQueryParam(t *testing.T) {
 
 func TestHandler_ExtraFieldsInlined(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags/Run")
@@ -476,7 +476,7 @@ func TestHandler_ExtraFieldsInlined(t *testing.T) {
 func TestHealthz_ReturnsOK(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
-	newHandler().ServeHTTP(w, req)
+	newHandler(false).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
@@ -509,7 +509,7 @@ func TestAccessLog_LogsMethodAndPath(t *testing.T) {
 	output := captureLog(t, func() {
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 		w := httptest.NewRecorder()
-		newHandler().ServeHTTP(w, req)
+		newHandler(false).ServeHTTP(w, req)
 	})
 	if !strings.Contains(output, "GET") {
 		t.Errorf("log output missing method GET: %q", output)
@@ -523,7 +523,7 @@ func TestAccessLog_LogsStatusCode(t *testing.T) {
 	output := captureLog(t, func() {
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 		w := httptest.NewRecorder()
-		newHandler().ServeHTTP(w, req)
+		newHandler(false).ServeHTTP(w, req)
 	})
 	if !strings.Contains(output, "200") {
 		t.Errorf("log output missing status 200: %q", output)
@@ -534,7 +534,7 @@ func TestAccessLog_LogsErrorStatusCode(t *testing.T) {
 	output := captureLog(t, func() {
 		req := httptest.NewRequest(http.MethodGet, "/tags/", nil)
 		w := httptest.NewRecorder()
-		newHandler().ServeHTTP(w, req)
+		newHandler(false).ServeHTTP(w, req)
 	})
 	if !strings.Contains(output, "400") {
 		t.Errorf("log output missing status 400: %q", output)
@@ -544,7 +544,7 @@ func TestAccessLog_LogsErrorStatusCode(t *testing.T) {
 func TestAccessLog_PassesThroughResponse(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
-	newHandler().ServeHTTP(w, req)
+	newHandler(false).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
@@ -555,7 +555,7 @@ func TestAccessLog_PassesThroughResponse(t *testing.T) {
 
 func TestHandler_ListAllTags_ReturnsAllTags(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags")
@@ -590,7 +590,7 @@ func TestHandler_ListAllTags_ReturnsAllTags(t *testing.T) {
 
 func TestHandler_ListAllTags_CountMatchesFile(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags")
@@ -612,7 +612,7 @@ func TestHandler_ListAllTags_CountMatchesFile(t *testing.T) {
 
 func TestHandler_ListAllTags_ContextQueryParam(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags?context=sub")
@@ -646,7 +646,7 @@ func TestHandler_ListAllTags_ContextQueryParam(t *testing.T) {
 
 func TestHandler_ListAllTags_TagsFileNotFound(t *testing.T) {
 	withCwd(t, t.TempDir(), func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/tags")
@@ -799,7 +799,7 @@ func TestSnippetForTag_WithLineAndEndField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	s, err := snippetForTag(tag)
+	s, err := snippetForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +828,7 @@ func TestSnippetForTag_WithPatternAndEndField(t *testing.T) {
 		Pattern: "^func Hello() {$",
 		Extra:   map[string]string{"end": "4"},
 	}
-	s, err := snippetForTag(tag)
+	s, err := snippetForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -850,7 +850,7 @@ func TestSnippetForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	s, err := snippetForTag(tag)
+	s, err := snippetForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +870,7 @@ func TestSnippetForTag_FileNotFound(t *testing.T) {
 		Line:  1,
 		Extra: map[string]string{},
 	}
-	_, err := snippetForTag(tag)
+	_, err := snippetForTag(tag, false)
 	if err == nil {
 		t.Fatal("expected error for missing source file")
 	}
@@ -887,7 +887,7 @@ func TestSnippetForTag_PatternNotFoundInFile(t *testing.T) {
 		Pattern: "func Foo",
 		Extra:   map[string]string{},
 	}
-	_, err := snippetForTag(tag)
+	_, err := snippetForTag(tag, false)
 	if err == nil {
 		t.Fatal("expected error when pattern not found")
 	}
@@ -900,7 +900,7 @@ func TestSnippetForTag_PatternNotFoundInFile(t *testing.T) {
 
 func TestSnippetHandler_ReturnsJSON(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/NewMyStruct")
@@ -928,7 +928,7 @@ func TestSnippetHandler_ReturnsJSON(t *testing.T) {
 
 func TestSnippetHandler_SnippetFields(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/NewMyStruct")
@@ -963,7 +963,7 @@ func TestSnippetHandler_SnippetFields(t *testing.T) {
 
 func TestSnippetHandler_MultipleSnippets(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/overloaded")
@@ -995,7 +995,7 @@ func TestSnippetHandler_MultipleSnippets(t *testing.T) {
 
 func TestSnippetHandler_TagNotFound(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/NonExistent")
@@ -1012,7 +1012,7 @@ func TestSnippetHandler_TagNotFound(t *testing.T) {
 
 func TestSnippetHandler_TagsFileNotFound(t *testing.T) {
 	withCwd(t, t.TempDir(), func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/anything")
@@ -1029,7 +1029,7 @@ func TestSnippetHandler_TagsFileNotFound(t *testing.T) {
 
 func TestSnippetHandler_ContextQueryParam(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/SubFunc?context=sub")
@@ -1064,7 +1064,7 @@ func TestSnippetHandler_LineOnlyTag(t *testing.T) {
 		t.Skip("readtags does not return line-number addressed tags")
 	}
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/lineonly")
@@ -1095,7 +1095,7 @@ func TestSnippetHandler_LineOnlyTag(t *testing.T) {
 
 func TestSnippetHandler_CodeBoundaries(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/snippets/Run")
@@ -1138,7 +1138,7 @@ func TestLineRangeForTag_WithLineAndEndField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	lr, err := lineRangeForTag(tag)
+	lr, err := lineRangeForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1166,7 +1166,7 @@ func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
 		Pattern: "^func Hello() {$",
 		Extra:   map[string]string{"end": "4"},
 	}
-	lr, err := lineRangeForTag(tag)
+	lr, err := lineRangeForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1188,7 +1188,7 @@ func TestLineRangeForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	lr, err := lineRangeForTag(tag)
+	lr, err := lineRangeForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1207,7 +1207,7 @@ func TestLineRangeForTag_FileNotFound(t *testing.T) {
 		Pattern: "^func Foo() {$",
 		Extra:   map[string]string{},
 	}
-	_, err := lineRangeForTag(tag)
+	_, err := lineRangeForTag(tag, false)
 	if err == nil {
 		t.Fatal("expected error for missing source file")
 	}
@@ -1223,7 +1223,7 @@ func TestLineRangeForTag_NoCodeField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	lr, err := lineRangeForTag(tag)
+	lr, err := lineRangeForTag(tag, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1240,7 +1240,7 @@ func TestLineRangeForTag_NoCodeField(t *testing.T) {
 
 func TestLinesHandler_ReturnsJSON(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
@@ -1268,7 +1268,7 @@ func TestLinesHandler_ReturnsJSON(t *testing.T) {
 
 func TestLinesHandler_LineRangeFields(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
@@ -1297,7 +1297,7 @@ func TestLinesHandler_LineRangeFields(t *testing.T) {
 
 func TestLinesHandler_NoCodeField(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
@@ -1318,7 +1318,7 @@ func TestLinesHandler_NoCodeField(t *testing.T) {
 
 func TestLinesHandler_MultipleRanges(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/overloaded")
@@ -1350,7 +1350,7 @@ func TestLinesHandler_MultipleRanges(t *testing.T) {
 
 func TestLinesHandler_TagNotFound(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/NonExistent")
@@ -1367,7 +1367,7 @@ func TestLinesHandler_TagNotFound(t *testing.T) {
 
 func TestLinesHandler_TagsFileNotFound(t *testing.T) {
 	withCwd(t, t.TempDir(), func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/anything")
@@ -1384,7 +1384,7 @@ func TestLinesHandler_TagsFileNotFound(t *testing.T) {
 
 func TestLinesHandler_ContextQueryParam(t *testing.T) {
 	withCwd(t, "testdata", func() {
-		srv := httptest.NewServer(newHandler())
+		srv := httptest.NewServer(newHandler(false))
 		defer srv.Close()
 
 		resp, err := http.Get(srv.URL + "/lines/SubFunc?context=sub")

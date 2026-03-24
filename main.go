@@ -280,8 +280,10 @@ func extractLines(lines []string, start, end int) string {
 
 // resolveStartEnd returns the start and end line numbers for a Tag.
 // The source file is read only when pattern matching is needed (tag.Line == 0).
-// If the "end" extension field is absent, endLine defaults to the total line count of the file.
-func resolveStartEnd(tag Tag) (startLine, endLine int, err error) {
+// If the "end" extension field is absent and useTreeSitter is true and the file
+// is a Rust source file, tree-sitter is used to determine the end line.
+// Otherwise endLine defaults to the total line count of the file.
+func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err error) {
 	needFile := tag.Line == 0 && tag.Pattern != ""
 
 	var lines []string
@@ -308,20 +310,32 @@ func resolveStartEnd(tag Tag) (startLine, endLine int, err error) {
 		}
 	}
 
-	// end field absent: fall back to EOF, reading the file if not already read.
+	// end field absent: read the file (if not already read) and try tree-sitter for
+	// Rust files, otherwise fall back to EOF.
+	var data []byte
 	if lines == nil {
-		data, readErr := os.ReadFile(tag.Path)
+		var readErr error
+		data, readErr = os.ReadFile(tag.Path)
 		if readErr != nil {
 			return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
 		}
 		lines = strings.Split(string(data), "\n")
+	} else {
+		data = []byte(strings.Join(lines, "\n"))
 	}
+
+	if useTreeSitter && isRustFile(tag.Path) {
+		if end, tsErr := resolveEndWithTreeSitterRust(data, startLine); tsErr == nil {
+			return startLine, end, nil
+		}
+	}
+
 	return startLine, len(lines), nil
 }
 
 // snippetForTag resolves a Snippet from a Tag by reading the source file.
-func snippetForTag(tag Tag) (Snippet, error) {
-	startLine, endLine, err := resolveStartEnd(tag)
+func snippetForTag(tag Tag, useTreeSitter bool) (Snippet, error) {
+	startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
 	if err != nil {
 		return Snippet{}, err
 	}
@@ -343,8 +357,8 @@ func snippetForTag(tag Tag) (Snippet, error) {
 
 // lineRangeForTag resolves the start and end line numbers for a Tag without reading
 // the full file content (the file is read only when pattern matching is needed).
-func lineRangeForTag(tag Tag) (LineRange, error) {
-	startLine, endLine, err := resolveStartEnd(tag)
+func lineRangeForTag(tag Tag, useTreeSitter bool) (LineRange, error) {
+	startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
 	if err != nil {
 		return LineRange{}, err
 	}
@@ -361,6 +375,7 @@ func main() {
 	flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
 	port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
 	flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
+	useTreeSitter := flag.Bool("tree-sitter", false, "use tree-sitter to resolve end lines when ctags does not provide them")
 	flag.Parse()
 
 	listenAddr := *addr
@@ -449,7 +464,7 @@ func main() {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(tag)
+			s, err := snippetForTag(tag, *useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -485,7 +500,7 @@ func main() {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(tag)
+			lr, err := lineRangeForTag(tag, *useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
