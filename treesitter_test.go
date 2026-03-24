@@ -299,6 +299,106 @@ func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample Haskell source used across unit tests.
+// Content must match testdata/hs/sample.hs exactly.
+var hsSample = []byte(`greet :: String -> String
+greet name =
+  "Hello, " ++ name ++ "!"
+
+add :: Int -> Int -> Int
+add x y = x + y
+
+data Color
+  = Red
+  | Green
+  | Blue
+
+data Point = Point
+  { px :: Double
+  , py :: Double
+  }
+
+class Shape a where
+  area :: a -> Double
+  perimeter :: a -> Double
+`)
+
+// ---- resolveEndWithTreeSitterHS tests ----
+
+func TestResolveEndWithTreeSitterHS_FunctionMultiLine(t *testing.T) {
+	// greet function starts at line 2, ends at line 3
+	end, err := resolveEndWithTreeSitterHS(hsSample, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 3 {
+		t.Errorf("end: got %d, want 3", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterHS_FunctionSingleLine(t *testing.T) {
+	// add function starts at line 6, ends at line 6
+	end, err := resolveEndWithTreeSitterHS(hsSample, 6)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 6 {
+		t.Errorf("end: got %d, want 6", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterHS_TypeSignature(t *testing.T) {
+	// greet type signature starts at line 1, ends at line 1
+	end, err := resolveEndWithTreeSitterHS(hsSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 1 {
+		t.Errorf("end: got %d, want 1", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterHS_DataType(t *testing.T) {
+	// data Color starts at line 8, ends at line 11
+	end, err := resolveEndWithTreeSitterHS(hsSample, 8)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 11 {
+		t.Errorf("end: got %d, want 11", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterHS_DataTypeRecord(t *testing.T) {
+	// data Point starts at line 13, ends at line 16
+	end, err := resolveEndWithTreeSitterHS(hsSample, 13)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 16 {
+		t.Errorf("end: got %d, want 16", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterHS_Class(t *testing.T) {
+	// class Shape starts at line 18, ends at line 20
+	end, err := resolveEndWithTreeSitterHS(hsSample, 18)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 20 {
+		t.Errorf("end: got %d, want 20", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterHS_LineNotFound(t *testing.T) {
+	// line 4 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterHS(hsSample, 4)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // ---- isRustFile / isJSFile tests ----
 
 func TestIsRustFile(t *testing.T) {
@@ -354,6 +454,25 @@ func TestIsTSFile(t *testing.T) {
 	for _, c := range cases {
 		if got := isTSFile(c.path); got != c.want {
 			t.Errorf("isTSFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsHSFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"Main.hs", true},
+		{"src/Lib.hs", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"app.ts", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isHSFile(c.path); got != c.want {
+			t.Errorf("isHSFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -742,6 +861,156 @@ func TestLinesHandler_TSFile_UsesTreeSitter(t *testing.T) {
 		}
 		if ranges[0].Start != 5 || ranges[0].End != 7 {
 			t.Errorf("Start/End: got %d/%d, want 5/7", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for Haskell files ----
+
+func TestSnippetHandler_HSFile_FunctionMultiLine(t *testing.T) {
+	// greet function spans lines 2-3; tree-sitter must resolve the end.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 2 || s.End != 3 {
+			t.Errorf("Start/End: got %d/%d, want 2/3", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "greet name") {
+			t.Errorf("Code should contain greet name, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "add x y") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_HSFile_FunctionSingleLine(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 6 || snippets[0].End != 6 {
+			t.Errorf("Start/End: got %d/%d, want 6/6", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_HSFile_DataType(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Color?context=hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 8 || snippets[0].End != 11 {
+			t.Errorf("Start/End: got %d/%d, want 8/11", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_HSFile_Class(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Shape?context=hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 18 || snippets[0].End != 20 {
+			t.Errorf("Start/End: got %d/%d, want 18/20", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_HSFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/Point?context=hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 13 || ranges[0].End != 16 {
+			t.Errorf("Start/End: got %d/%d, want 13/16", ranges[0].Start, ranges[0].End)
 		}
 	})
 }

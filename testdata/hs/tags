@@ -1,0 +1,8 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_NAME	Universal Ctags	//
+Color	hs/sample.hs	/^data Color$/;"	kind:type	line:8	language:Haskell
+Point	hs/sample.hs	/^data Point = Point$/;"	kind:type	line:13	language:Haskell
+Shape	hs/sample.hs	/^class Shape a where$/;"	kind:type	line:18	language:Haskell
+add	hs/sample.hs	/^add x y = x + y$/;"	kind:function	line:6	language:Haskell
+greet	hs/sample.hs	/^greet name =$/;"	kind:function	line:2	language:Haskell

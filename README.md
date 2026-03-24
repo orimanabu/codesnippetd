@@ -20,7 +20,7 @@ codesnippetd [-addr <listen-address>]
 | `-l` | — | Shorthand for `-listen` |
 | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
 | `-p` | — | Shorthand for `-port` |
-| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, and TypeScript `.ts`) |
+| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, and Haskell `.hs`) |
 
 The server resolves tag files relative to its **current working directory**:
 
@@ -154,7 +154,7 @@ Returns code snippets extracted from the source files for all tags matching the 
 The end line is resolved in the following order of priority:
 
 1. The `end` extension field recorded in the ctags tags file.
-2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, or `.ts`).
+2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, or `.hs`).
 3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
 
 **Path Parameters**
@@ -209,7 +209,7 @@ Returns the start and end line numbers for all tags matching the given name, wit
 The end line is resolved in the following order of priority:
 
 1. The `end` extension field recorded in the ctags tags file.
-2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, or `.ts`).
+2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, or `.hs`).
 3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
 
 **Path Parameters**

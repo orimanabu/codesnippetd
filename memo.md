@@ -4,6 +4,12 @@
 ctags -R --extras=+g --fields=+e
 ```
 
+# My templates
+
+```
+tree-sitterのサポート言語として、Haskellを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.hs` のときはtree sitterのHaskell parserを使うようにしてください。テストコードとREADME.mdの更新もお願いします
+```
+
 # Prompts
 
  ```
@@ -5763,4 +5769,610 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
   - testdata/ts/tags（end フィールドなしで tree-sitter に解決させる）
 
 ✻ Cogitated for 3m 49s
+```
+
+```
+❯ tree-sitterのサポート言語として、Haskellを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.hs`
+のときはtree sitterのHaskell parserを使うようにしてください。テストコードとREADME.mdの更新もお願いします
+
+⏺ Bash(find /Users/ori/go/pkg/mod/github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82 -name "*.go" | xargs grep -l "haskell\|Haskell" 2>/dev/null | he…)
+  ⎿  (No output)
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ go-tree-sitter パッケージに Haskell は含まれていません。別の Go バインディングを探します。
+
+⏺ Bash(find /Users/ori/go/pkg/mod/cache/download/sumdb -name "*.json" 2>/dev/null | head -3; go search tree-sitter haskell 2>/dev/null | head -10; curl -s "https://pkg…)
+  ⎿  <!DOCTYPE html>
+     <html lang="en" data-layout="" data-local="">
+       <head>
+
+⏺ Explore(Find Haskell tree-sitter Go bindings)
+  ⎿  Done (14 tool uses · 25.0k tokens · 1m 56s)
+  (ctrl+o to expand)
+
+⏺ Bash(GOPROXY=https://proxy.golang.org go list -m -versions github.com/tree-sitter/tree-sitter-haskell 2>&1 | head -3)
+  ⎿  github.com/tree-sitter/tree-sitter-haskell v0.11.0 v0.13.0 v0.15.0 v0.21.0 v0.23.0 v0.23.1
+
+⏺ Bash(GOPROXY=https://proxy.golang.org go get github.com/tree-sitter/tree-sitter-haskell/bindings/go@latest 2>&1 | head -10)
+  ⎿  go: downloading github.com/tree-sitter/tree-sitter-haskell v0.23.1
+     go: added github.com/tree-sitter/tree-sitter-haskell v0.23.1
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ sitter.NewLanguage(ptr) で変換できます。ビルドが通るか確認します。
+
+⏺ Bash(cat > /tmp/haskell_test_main.go << 'EOF'
+      package main…)
+  ⎿  (eval):24: no such file or directory: /tmp/hstest/main.go
+     (haskell declarations: (declarations (function name: (variable) patterns: (patterns (variable)) match: (match expression: (infix left_operand: (literal (string)) operator
+     : (operator) right_operand: (variable))))))
+
+⏺ 互換性確認できました。Haskell のノードタイプを調査します。
+
+⏺ Bash(cat > /Users/ori/devel/src/github.com/orimanabu/codesnippetd/hsprobe_test.go << 'EOF'
+      //go:build ignore…)
+  ⎿  FAIL       github.com/orimanabu/codesnippetd [setup failed]
+
+⏺ Bash(\
+      sed -i '' 's|//go:build ignore||' hsprobe_test.go && \…)
+  ⎿  line  1- 1 type=module                         content="Main"
+     --- PASS: TestHaskellNodes (0.00s)
+     PASS
+
+⏺ Bash(cat > hsprobe_test.go << 'EOF'
+      package main…)
+  ⎿  depth=0 line= 1-25 type=haskell                             "module Main where\n\ngreet :: String -> St"
+     depth=1 line= 1- 1 type=header                              "module Main where"
+     depth=2 line= 1- 1 type=module                              "Main"
+     … +11 lines (ctrl+o to expand)
+
+⏺ Haskell ノードタイプが確認できました。プローブファイルを削除して実装を進めます。
+
+⏺ Bash(rm /Users/ori/devel/src/github.com/orimanabu/codesnippetd/hsprobe_test.go)
+  ⎿  Done
+
+⏺ サンプルファイルの各定義の正確な終了行を確認します。
+
+⏺ Bash(cat > /Users/ori/devel/src/github.com/orimanabu/codesnippetd/hsprobe2_test.go << 'EOF'
+      package main…)
+  ⎿  FAIL       github.com/orimanabu/codesnippetd [build failed]
+
+⏺ 先に treesitter.go に実装を追加してからプローブを走らせます。
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+       9    "github.com/smacker/go-tree-sitter/javascript"
+      10    "github.com/smacker/go-tree-sitter/rust"
+      11    "github.com/smacker/go-tree-sitter/typescript/typescript"
+      12 +  haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+      13  )
+      14
+      15  // rustDefinitionTypes is the set of tree-sitter node types treated as
+
+⏺ Update(treesitter.go)
+  ⎿  Added 19 lines
+      123    return resolveEndWithTreeSitter(typescript.GetLanguage(), tsDefinitionTypes, content, startLine)
+      124  }
+      125
+      126 +// hsDefinitionTypes is the set of tree-sitter node types treated as
+      127 +// definitions in Haskell source files.
+      128 +// Note: "type_synomym" is the spelling used by the tree-sitter-haskell grammar.
+      129 +var hsDefinitionTypes = map[string]bool{
+      130 +  "function":     true,
+      131 +  "signature":    true,
+      132 +  "data_type":    true,
+      133 +  "class":        true,
+      134 +  "instance":     true,
+      135 +  "newtype":      true,
+      136 +  "type_synomym": true,
+      137 +}
+      138 +
+      139 +// resolveEndWithTreeSitterHS returns the 1-based end line of the Haskell
+      140 +// definition starting at startLine (1-based).
+      141 +func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
+      142 +  return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      143 +}
+      144 +
+      145  // isRustFile reports whether path is a Rust source file.
+      146  func isRustFile(path string) bool {
+      147    return filepath.Ext(path) == ".rs"
+  ⎿  Found 2 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Update(treesitter.go)
+  ⎿  Error editing file
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ resolveEndWithTreeSitterHS が重複しています。整理します。
+
+⏺ Update(treesitter.go)
+  ⎿  Removed 19 lines
+      123    return resolveEndWithTreeSitter(typescript.GetLanguage(), tsDefinitionTypes, content, startLine)
+      124  }
+      125
+      126 -// hsDefinitionTypes is the set of tree-sitter node types treated as
+      127 -// definitions in Haskell source files.
+      128 -// Note: "type_synomym" is the spelling used by the tree-sitter-haskell grammar.
+      129 -var hsDefinitionTypes = map[string]bool{
+      130 -  "function":     true,
+      131 -  "signature":    true,
+      132 -  "data_type":    true,
+      133 -  "class":        true,
+      134 -  "instance":     true,
+      135 -  "newtype":      true,
+      136 -  "type_synomym": true,
+      137 -}
+      138 -
+      139 -// resolveEndWithTreeSitterHS returns the 1-based end line of the Haskell
+      140 -// definition starting at startLine (1-based).
+      141 -func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
+      142 -  return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      143 -}
+      144 -
+      126  // isRustFile reports whether path is a Rust source file.
+      127  func isRustFile(path string) bool {
+      128    return filepath.Ext(path) == ".rs"
+
+⏺ Update(treesitter.go)
+  ⎿  Added 24 lines
+      137  func isTSFile(path string) bool {
+      138    return filepath.Ext(path) == ".ts"
+      139  }
+      140 +
+      141 +// isHSFile reports whether path is a Haskell source file.
+      142 +func isHSFile(path string) bool {
+      143 +  return filepath.Ext(path) == ".hs"
+      144 +}
+      145 +
+      146 +// hsDefinitionTypes is the set of tree-sitter node types treated as
+      147 +// definitions in Haskell source files.
+      148 +// Note: "type_synomym" is the spelling used by the tree-sitter-haskell grammar.
+      149 +var hsDefinitionTypes = map[string]bool{
+      150 +  "function":     true,
+      151 +  "signature":    true,
+      152 +  "data_type":    true,
+      153 +  "class":        true,
+      154 +  "instance":     true,
+      155 +  "newtype":      true,
+      156 +  "type_synomym": true,
+      157 +}
+      158 +
+      159 +// resolveEndWithTreeSitterHS returns the 1-based end line of the Haskell
+      160 +// definition starting at startLine (1-based).
+      161 +func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
+      162 +  return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      163 +}
+
+⏺ Bash(go test -v -run TestHaskellEndLines 2>&1 | grep "^line\|^resolve\|FAIL\|build")
+  ⎿  line  1- 1 type=signature            "greet :: String -> String"
+     line  2- 3 type=function             "greet name =\n  \"Hello, \" ++ name ++ \"!\""
+     line  5- 5 type=signature            "add :: Int -> Int -> Int"
+     … +11 lines (ctrl+o to expand)
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ 期待値確認完了。プローブファイルを削除して実装を完成させます。
+
+⏺ Bash(rm /Users/ori/devel/src/github.com/orimanabu/codesnippetd/hsprobe2_test.go)
+  ⎿  Done
+
+⏺ main.go に Haskell ケースを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      334        tsEnd, tsErr = resolveEndWithTreeSitterJS(data, startLine)
+      335      case isTSFile(tag.Path):
+      336        tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+      337 +    case isHSFile(tag.Path):
+      338 +      tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+      339      }
+      340      if tsErr == nil && tsEnd > 0 {
+      341        return startLine, tsEnd, nil
+
+⏺ テストデータを作成します。
+
+⏺ Bash(mkdir -p /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata/hs)
+  ⎿  Done
+
+⏺ Write(testdata/hs/sample.hs)
+  ⎿  Wrote 20 lines to testdata/hs/sample.hs
+       1 greet :: String -> String
+       2 greet name =
+       3   "Hello, " ++ name ++ "!"
+       4
+       5 add :: Int -> Int -> Int
+       6 add x y = x + y
+       7
+       8 data Color
+       9   = Red
+      10   | Green
+     … +10 lines (ctrl+o to expand)
+
+⏺ Write(testdata/hs/tags)
+  ⎿  Wrote 8 lines to testdata/hs/tags
+      1 !_TAG_FILE_FORMAT       2       /extended format; --format=1 will not append ;" to lines/
+      2 !_TAG_FILE_SORTED       1       /0=unsorted, 1=sorted, 2=foldcase/
+      3 !_TAG_PROGRAM_NAME      Universal Ctags //
+      4 Color   hs/sample.hs    /^data Color$/;"        kind:type       line:8  language:Haskell
+      5 Point   hs/sample.hs    /^data Point = Point$/;"        kind:type       line:13 language:Haskell
+      6 Shape   hs/sample.hs    /^class Shape a where$/;"       kind:type       line:18 language:Haskell
+      7 add     hs/sample.hs    /^add x y = x + y$/;"   kind:function   line:6  language:Haskell
+      8 greet   hs/sample.hs    /^greet name =$/;"      kind:function   line:2  language:Haskell
+
+⏺ Bash(readtags -e -t testdata/hs/tags greet 2>&1; echo "---"; readtags -e -t testdata/hs/tags Color 2>&1)
+  ⎿  greet      hs/sample.hs    /^greet name =$/;"      kind:function   language:Haskell
+     ---
+     Color      hs/sample.hs    /^data Color$/;"        kind:type       language:Haskell
+
+⏺ 次にテストを追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 100 lines
+      299    }
+      300  }
+      301
+      302 +// sample Haskell source used across unit tests.
+      303 +// Content must match testdata/hs/sample.hs exactly.
+      304 +var hsSample = []byte(`greet :: String -> String
+      305 +greet name =
+      306 +  "Hello, " ++ name ++ "!"
+      307 +
+      308 +add :: Int -> Int -> Int
+      309 +add x y = x + y
+      310 +
+      311 +data Color
+      312 +  = Red
+      313 +  | Green
+      314 +  | Blue
+      315 +
+      316 +data Point = Point
+      317 +  { px :: Double
+      318 +  , py :: Double
+      319 +  }
+      320 +
+      321 +class Shape a where
+      322 +  area :: a -> Double
+      323 +  perimeter :: a -> Double
+      324 +`)
+      325 +
+      326 +// ---- resolveEndWithTreeSitterHS tests ----
+      327 +
+      328 +func TestResolveEndWithTreeSitterHS_FunctionMultiLine(t *testing.T) {
+      329 +  // greet function starts at line 2, ends at line 3
+      330 +  end, err := resolveEndWithTreeSitterHS(hsSample, 2)
+      331 +  if err != nil {
+      332 +    t.Fatalf("unexpected error: %v", err)
+      333 +  }
+      334 +  if end != 3 {
+      335 +    t.Errorf("end: got %d, want 3", end)
+      336 +  }
+      337 +}
+      338 +
+      339 +func TestResolveEndWithTreeSitterHS_FunctionSingleLine(t *testing.T) {
+      340 +  // add function starts at line 6, ends at line 6
+      341 +  end, err := resolveEndWithTreeSitterHS(hsSample, 6)
+      342 +  if err != nil {
+      343 +    t.Fatalf("unexpected error: %v", err)
+      344 +  }
+      345 +  if end != 6 {
+      346 +    t.Errorf("end: got %d, want 6", end)
+      347 +  }
+      348 +}
+      349 +
+      350 +func TestResolveEndWithTreeSitterHS_TypeSignature(t *testing.T) {
+      351 +  // greet type signature starts at line 1, ends at line 1
+      352 +  end, err := resolveEndWithTreeSitterHS(hsSample, 1)
+      353 +  if err != nil {
+      354 +    t.Fatalf("unexpected error: %v", err)
+      355 +  }
+      356 +  if end != 1 {
+      357 +    t.Errorf("end: got %d, want 1", end)
+      358 +  }
+      359 +}
+      360 +
+      361 +func TestResolveEndWithTreeSitterHS_DataType(t *testing.T) {
+      362 +  // data Color starts at line 8, ends at line 11
+      363 +  end, err := resolveEndWithTreeSitterHS(hsSample, 8)
+      364 +  if err != nil {
+      365 +    t.Fatalf("unexpected error: %v", err)
+      366 +  }
+      367 +  if end != 11 {
+      368 +    t.Errorf("end: got %d, want 11", end)
+      369 +  }
+      370 +}
+      371 +
+      372 +func TestResolveEndWithTreeSitterHS_DataTypeRecord(t *testing.T) {
+      373 +  // data Point starts at line 13, ends at line 16
+      374 +  end, err := resolveEndWithTreeSitterHS(hsSample, 13)
+      375 +  if err != nil {
+      376 +    t.Fatalf("unexpected error: %v", err)
+      377 +  }
+      378 +  if end != 16 {
+      379 +    t.Errorf("end: got %d, want 16", end)
+      380 +  }
+      381 +}
+      382 +
+      383 +func TestResolveEndWithTreeSitterHS_Class(t *testing.T) {
+      384 +  // class Shape starts at line 18, ends at line 20
+      385 +  end, err := resolveEndWithTreeSitterHS(hsSample, 18)
+      386 +  if err != nil {
+      387 +    t.Fatalf("unexpected error: %v", err)
+      388 +  }
+      389 +  if end != 20 {
+      390 +    t.Errorf("end: got %d, want 20", end)
+      391 +  }
+      392 +}
+      393 +
+      394 +func TestResolveEndWithTreeSitterHS_LineNotFound(t *testing.T) {
+      395 +  // line 4 is blank — no definition starts there
+      396 +  _, err := resolveEndWithTreeSitterHS(hsSample, 4)
+      397 +  if err == nil {
+      398 +    t.Fatal("expected error for blank line with no definition")
+      399 +  }
+      400 +}
+      401 +
+      402  // ---- isRustFile / isJSFile tests ----
+      403
+      404  func TestIsRustFile(t *testing.T) {
+
+⏺ isTSFile テストの後に isHSFile テストと HTTP ハンドラ統合テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 19 lines
+      458    }
+      459  }
+      460
+      461 +func TestIsHSFile(t *testing.T) {
+      462 +  cases := []struct {
+      463 +    path string
+      464 +    want bool
+      465 +  }{
+      466 +    {"Main.hs", true},
+      467 +    {"src/Lib.hs", true},
+      468 +    {"main.go", false},
+      469 +    {"main.rs", false},
+      470 +    {"app.ts", false},
+      471 +    {"noextension", false},
+      472 +  }
+      473 +  for _, c := range cases {
+      474 +    if got := isHSFile(c.path); got != c.want {
+      475 +      t.Errorf("isHSFile(%q) = %v, want %v", c.path, got, c.want)
+      476 +    }
+      477 +  }
+      478 +}
+      479 +
+      480  // ---- HTTP handler integration tests for Rust files ----
+      481
+      482  func TestSnippetHandler_RustFile_UsesTreeSitter(t *testing.T) {
+
+⏺ 最後に Haskell ハンドラ統合テストをファイル末尾に追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 150 lines
+       864      }
+       865    })
+       866  }
+       867 +
+       868 +// ---- HTTP handler integration tests for Haskell files ----
+       869 +
+       870 +func TestSnippetHandler_HSFile_FunctionMultiLine(t *testing.T) {
+       871 +  // greet function spans lines 2-3; tree-sitter must resolve the end.
+       872 +  withCwd(t, "testdata", func() {
+       873 +    srv := httptest.NewServer(newHandler(true))
+       874 +    defer srv.Close()
+       875 +
+       876 +    resp, err := http.Get(srv.URL + "/snippets/greet?context=hs")
+       877 +    if err != nil {
+       878 +      t.Fatal(err)
+       879 +    }
+       880 +    defer resp.Body.Close()
+       881 +
+       882 +    if resp.StatusCode != http.StatusOK {
+       883 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       884 +    }
+       885 +
+       886 +    var snippets []Snippet
+       887 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+       888 +      t.Fatalf("decode: %v", err)
+       889 +    }
+       890 +    if len(snippets) != 1 {
+       891 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+       892 +    }
+       893 +    s := snippets[0]
+       894 +    if s.Start != 2 || s.End != 3 {
+       895 +      t.Errorf("Start/End: got %d/%d, want 2/3", s.Start, s.End)
+       896 +    }
+       897 +    if !strings.Contains(s.Code, "greet name") {
+       898 +      t.Errorf("Code should contain greet name, got %q", s.Code)
+       899 +    }
+       900 +    if strings.Contains(s.Code, "add x y") {
+       901 +      t.Errorf("Code should not extend past end of function, got %q", s.Code)
+       902 +    }
+       903 +  })
+       904 +}
+       905 +
+       906 +func TestSnippetHandler_HSFile_FunctionSingleLine(t *testing.T) {
+       907 +  withCwd(t, "testdata", func() {
+       908 +    srv := httptest.NewServer(newHandler(true))
+       909 +    defer srv.Close()
+       910 +
+       911 +    resp, err := http.Get(srv.URL + "/snippets/add?context=hs")
+       912 +    if err != nil {
+       913 +      t.Fatal(err)
+       914 +    }
+       915 +    defer resp.Body.Close()
+       916 +
+       917 +    if resp.StatusCode != http.StatusOK {
+       918 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       919 +    }
+       920 +
+       921 +    var snippets []Snippet
+       922 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+       923 +      t.Fatalf("decode: %v", err)
+       924 +    }
+       925 +    if len(snippets) != 1 {
+       926 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+       927 +    }
+       928 +    if snippets[0].Start != 6 || snippets[0].End != 6 {
+       929 +      t.Errorf("Start/End: got %d/%d, want 6/6", snippets[0].Start, snippets[0].End)
+       930 +    }
+       931 +  })
+       932 +}
+       933 +
+       934 +func TestSnippetHandler_HSFile_DataType(t *testing.T) {
+       935 +  withCwd(t, "testdata", func() {
+       936 +    srv := httptest.NewServer(newHandler(true))
+       937 +    defer srv.Close()
+       938 +
+       939 +    resp, err := http.Get(srv.URL + "/snippets/Color?context=hs")
+       940 +    if err != nil {
+       941 +      t.Fatal(err)
+       942 +    }
+       943 +    defer resp.Body.Close()
+       944 +
+       945 +    if resp.StatusCode != http.StatusOK {
+       946 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       947 +    }
+       948 +
+       949 +    var snippets []Snippet
+       950 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+       951 +      t.Fatalf("decode: %v", err)
+       952 +    }
+       953 +    if len(snippets) != 1 {
+       954 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+       955 +    }
+       956 +    if snippets[0].Start != 8 || snippets[0].End != 11 {
+       957 +      t.Errorf("Start/End: got %d/%d, want 8/11", snippets[0].Start, snippets[0].End)
+       958 +    }
+       959 +  })
+       960 +}
+       961 +
+       962 +func TestSnippetHandler_HSFile_Class(t *testing.T) {
+       963 +  withCwd(t, "testdata", func() {
+       964 +    srv := httptest.NewServer(newHandler(true))
+       965 +    defer srv.Close()
+       966 +
+       967 +    resp, err := http.Get(srv.URL + "/snippets/Shape?context=hs")
+       968 +    if err != nil {
+       969 +      t.Fatal(err)
+       970 +    }
+       971 +    defer resp.Body.Close()
+       972 +
+       973 +    if resp.StatusCode != http.StatusOK {
+       974 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       975 +    }
+       976 +
+       977 +    var snippets []Snippet
+       978 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+       979 +      t.Fatalf("decode: %v", err)
+       980 +    }
+       981 +    if len(snippets) != 1 {
+       982 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+       983 +    }
+       984 +    if snippets[0].Start != 18 || snippets[0].End != 20 {
+       985 +      t.Errorf("Start/End: got %d/%d, want 18/20", snippets[0].Start, snippets[0].End)
+       986 +    }
+       987 +  })
+       988 +}
+       989 +
+       990 +func TestLinesHandler_HSFile_UsesTreeSitter(t *testing.T) {
+       991 +  withCwd(t, "testdata", func() {
+       992 +    srv := httptest.NewServer(newHandler(true))
+       993 +    defer srv.Close()
+       994 +
+       995 +    resp, err := http.Get(srv.URL + "/lines/Point?context=hs")
+       996 +    if err != nil {
+       997 +      t.Fatal(err)
+       998 +    }
+       999 +    defer resp.Body.Close()
+      1000 +
+      1001 +    if resp.StatusCode != http.StatusOK {
+      1002 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1003 +    }
+      1004 +
+      1005 +    var ranges []LineRange
+      1006 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1007 +      t.Fatalf("decode: %v", err)
+      1008 +    }
+      1009 +    if len(ranges) != 1 {
+      1010 +      t.Fatalf("expected 1 range, got %d", len(ranges))
+      1011 +    }
+      1012 +    if ranges[0].Start != 13 || ranges[0].End != 16 {
+      1013 +      t.Errorf("Start/End: got %d/%d, want 13/16", ranges[0].Start, ranges[0].End)
+      1014 +    }
+      1015 +  })
+      1016 +}
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.821s
+
+⏺ 全テストパス。README と go.mod を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      20  | `-l` | — | Shorthand for `-listen` |
+      21  | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 -| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, and TypeScript `.ts`) |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, and H
+         +askell `.hs`) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      154  The end line is resolved in the following order of priority:
+      155
+      156  1. The `end` extension field recorded in the ctags tags file.
+      157 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, or `.ts`).
+      157 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, or `.hs`).
+      158  3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
+      159
+      160  **Path Parameters**
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      209  The end line is resolved in the following order of priority:
+      210
+      211  1. The `end` extension field recorded in the ctags tags file.
+      212 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, or `.ts`).
+      212 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, or `.hs`).
+      213  3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
+      214
+      215  **Path Parameters**
+
+⏺ Bash(go mod tidy 2>&1 && go test ./... 2>&1)
+  ⎿  go: downloading github.com/tree-sitter/go-tree-sitter v0.24.0
+     go: downloading github.com/mattn/go-pointer v0.0.1
+     ok         github.com/orimanabu/codesnippetd       0.502s
+  ⎿  (timeout 1m)
+
+⏺ 全テストがパスしました。変更の概要です。
+
+  ---
+  treesitter.go
+  - github.com/tree-sitter/tree-sitter-haskell/bindings/go をインポート
+  - hsDefinitionTypes: function, signature, data_type, class, instance, newtype, type_synomym（tree-sitter-haskell の typo に合わせた綴り）
+  - resolveEndWithTreeSitterHS() 関数を追加（sitter.NewLanguage(haskell.Language()) で変換）
+  - isHSFile() 関数を追加（.hs 拡張子を判定）
+
+  main.go
+  - resolveStartEnd の switch に case isHSFile(tag.Path) を追加
+
+  treesitter_test.go
+  - hsSample 変数（testdata/hs/sample.hs と同一内容）
+  - ユニットテスト 7 本（多行関数/単行関数/型シグネチャ/data type/record data/class/空行エラー）
+  - isHSFile のテーブルテスト
+  - HTTP ハンドラ統合テスト 5 本（context=hs で greet/add/Color/Shape/Point を検証）
+
+  テストデータ
+  - testdata/hs/sample.hs（関数・data type・type class を含む 20 行）
+  - testdata/hs/tags（end フィールドなし、tree-sitter に解決させる）
+
+✻ Churned for 7m 19s
 ```

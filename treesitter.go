@@ -9,6 +9,7 @@ import (
 	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
+	haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
 )
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
@@ -135,4 +136,28 @@ func isJSFile(path string) bool {
 // isTSFile reports whether path is a TypeScript source file.
 func isTSFile(path string) bool {
 	return filepath.Ext(path) == ".ts"
+}
+
+// isHSFile reports whether path is a Haskell source file.
+func isHSFile(path string) bool {
+	return filepath.Ext(path) == ".hs"
+}
+
+// hsDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Haskell source files.
+// Note: "type_synomym" is the spelling used by the tree-sitter-haskell grammar.
+var hsDefinitionTypes = map[string]bool{
+	"function":     true,
+	"signature":    true,
+	"data_type":    true,
+	"class":        true,
+	"instance":     true,
+	"newtype":      true,
+	"type_synomym": true,
+}
+
+// resolveEndWithTreeSitterHS returns the 1-based end line of the Haskell
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
 }
