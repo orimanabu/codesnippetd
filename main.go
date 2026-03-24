@@ -357,7 +357,7 @@ func lineRangeForTag(tag Tag) (LineRange, error) {
 }
 
 func main() {
-	addr := flag.String("addr", ":8080", "listen address")
+	addr := flag.String("addr", ":8999", "listen address")
 	flag.Parse()
 
 	mux := http.NewServeMux()

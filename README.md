@@ -10,7 +10,7 @@ codesnippetd [-addr <listen-address>]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-addr` | `:8080` | TCP address to listen on |
+| `-addr` | `:8999` | TCP address to listen on |
 
 The server resolves tag files relative to its **current working directory**:
 
