@@ -3693,3 +3693,41 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ⏺ 完了です。-addr を -l/-listen/--listen に変更しました。
 ```
+
+```
+❯ README.mdにセキュリティ上の注意点に関する章を追加したいです。内容は「このプログラムはセキュリティに関して何も考慮していません。コンフィデンシャルなコードを公開しないでください。
+信頼できるホストからしか接続できないよう、適切に設定してください。」を英語にしてください。"A REST API server that exposes Universal Ctags tag databases over
+HTTP."の文の直後に書いてください。
+
+⏺ Update(README.md)
+  ⎿  Added 4 lines
+       2
+       3  A REST API server that exposes [Universal Ctags](https://ctags.io/) tag databases over HTTP.
+       4
+       5 +## Security Notice
+       6 +
+       7 +This program has no security measures of any kind. Do not expose confidential source code through it. Ensure that only trusted hosts can connect by configuring you
+         +r firewall or network access controls appropriately.
+       8 +
+       9  ## Usage
+      10
+      11  ```
+
+⏺ 追加しました。
+
+❯ さらに「クエリによってはタグ検索時に大きな負荷がかかり、DOS攻撃につながりますので注意してください」も追記して
+
+⏺ Update(README.md)
+  ⎿  Added 2 lines
+       6
+       7  This program has no security measures of any kind. Do not expose confidential source code through it. Ensure that only trusted hosts can connect by configuring you
+          r firewall or network access controls appropriately.
+       8
+       9 +Be aware that certain queries may place a heavy load on the tag search process, which could be exploited as a denial-of-service attack vector.
+      10 +
+      11  ## Usage
+      12
+      13  ```
+
+⏺ 追記しました。
+```

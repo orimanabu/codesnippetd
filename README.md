@@ -2,6 +2,12 @@
 
 A REST API server that exposes [Universal Ctags](https://ctags.io/) tag databases over HTTP.
 
+## Security Notice
+
+This program has no security measures of any kind. Do not expose confidential source code through it. Ensure that only trusted hosts can connect by configuring your firewall or network access controls appropriately.
+
+Be aware that certain queries may place a heavy load on the tag search process, which could be exploited as a denial-of-service attack vector.
+
 ## Usage
 
 ```
