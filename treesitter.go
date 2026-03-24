@@ -7,6 +7,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/php"
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 	haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
@@ -161,6 +162,27 @@ var hsDefinitionTypes = map[string]bool{
 // definition starting at startLine (1-based).
 func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
 	return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+}
+
+// isPHPFile reports whether path is a PHP source file.
+func isPHPFile(path string) bool {
+	return filepath.Ext(path) == ".php"
+}
+
+// phpDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in PHP source files.
+var phpDefinitionTypes = map[string]bool{
+	"function_definition":   true,
+	"method_declaration":    true,
+	"class_declaration":     true,
+	"interface_declaration": true,
+	"trait_declaration":     true,
+}
+
+// resolveEndWithTreeSitterPHP returns the 1-based end line of the PHP
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterPHP(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(php.GetLanguage(), phpDefinitionTypes, content, startLine)
 }
 
 // isMLFile reports whether path is an OCaml implementation file.

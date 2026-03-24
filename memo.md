@@ -7057,3 +7057,544 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
 
 ✻ Cogitated for 5m 22s
 ```
+
+```
+❯ tree-sitterのサポート言語として、PHPを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.php` のときはtree sitterのPHP parserを使うようにしてください。テストコードとREADME.mdの更新もお願いします。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ smacker/go-tree-sitter に PHP が含まれています。ノードタイプを調査します。
+
+⏺ Bash(cat > /Users/ori/devel/src/github.com/orimanabu/codesnippetd/phpprobe_test.go << 'EOF'
+      package main…)
+  ⎿  depth=0 line= 1-34 type=program                             "<?php\n\nfunction greet(string $name): string {\n  re"
+     depth=1 line= 1- 1 type=php_tag                             "<?php"
+     depth=1 line= 3- 5 type=function_definition                 "function greet(string $name): string {\n  return \"H"
+     … +18 lines (ctrl+o to expand)
+
+⏺ Bash(cat >> /Users/ori/devel/src/github.com/orimanabu/codesnippetd/phpprobe_test.go << 'EOF'…)
+  ⎿  line  3 -> end 5 (type=function_definition)
+     line  7 -> end 9 (type=function_definition)
+     line 11 -> end 23 (type=class_declaration)
+     … +4 lines (ctrl+o to expand)
+
+⏺ メソッド内部のノードタイプも確認します。
+
+⏺ Bash(cat >> /Users/ori/devel/src/github.com/orimanabu/codesnippetd/phpprobe_test.go << 'EOF'…)
+  ⎿  depth=1 line=11-23 type=class_declaration              "class Point {\n  public float $x;\n  publi"
+     depth=2 line=11-11 type=name                           "Point"
+     depth=2 line=11-23 type=declaration_list               "{\n  public float $x;\n  public float $y;\n"
+     … +25 lines (ctrl+o to expand)
+
+⏺ 全ノードタイプと end 行が確認できました。プローブを削除して実装します。
+
+⏺ Bash(rm /Users/ori/devel/src/github.com/orimanabu/codesnippetd/phpprobe_test.go)
+  ⎿  Done
+
+⏺ treesitter.go に PHP サポートを追加します。
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+       7
+       8    sitter "github.com/smacker/go-tree-sitter"
+       9    "github.com/smacker/go-tree-sitter/javascript"
+      10 +  "github.com/smacker/go-tree-sitter/php"
+      11    "github.com/smacker/go-tree-sitter/rust"
+      12    "github.com/smacker/go-tree-sitter/typescript/typescript"
+      13    haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+
+⏺ Update(treesitter.go)
+  ⎿  Added 21 lines
+      164    return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      165  }
+      166
+      167 +// isPHPFile reports whether path is a PHP source file.
+      168 +func isPHPFile(path string) bool {
+      169 +  return filepath.Ext(path) == ".php"
+      170 +}
+      171 +
+      172 +// phpDefinitionTypes is the set of tree-sitter node types treated as
+      173 +// definitions in PHP source files.
+      174 +var phpDefinitionTypes = map[string]bool{
+      175 +  "function_definition":   true,
+      176 +  "method_declaration":    true,
+      177 +  "class_declaration":     true,
+      178 +  "interface_declaration": true,
+      179 +  "trait_declaration":     true,
+      180 +}
+      181 +
+      182 +// resolveEndWithTreeSitterPHP returns the 1-based end line of the PHP
+      183 +// definition starting at startLine (1-based).
+      184 +func resolveEndWithTreeSitterPHP(content []byte, startLine int) (int, error) {
+      185 +  return resolveEndWithTreeSitter(php.GetLanguage(), phpDefinitionTypes, content, startLine)
+      186 +}
+      187 +
+      188  // isMLFile reports whether path is an OCaml implementation file.
+      189  func isMLFile(path string) bool {
+      190    return filepath.Ext(path) == ".ml"
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ main.go に PHP ケースを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      336        tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+      337      case isHSFile(tag.Path):
+      338        tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+      339 +    case isPHPFile(tag.Path):
+      340 +      tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, startLine)
+      341      case isMLFile(tag.Path):
+      342        tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, startLine)
+      343      case isMLIFile(tag.Path):
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ テストデータを作成します。
+
+⏺ Bash(mkdir -p /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata/php)
+  ⎿  Done
+
+⏺ Write(testdata/php/sample.php)
+  ⎿  Wrote 33 lines to testdata/php/sample.php
+      1 <?php
+      2
+      3 function greet(string $name): string {
+      4   return "Hello, " . $name . "!";
+      5 }
+      6
+      7 function add(int $x, int $y): int {
+      8   return $x + $y;
+      9 }
+     … +23 lines (ctrl+o to expand)
+
+⏺ Write(testdata/php/tags)
+  ⎿  Wrote 11 lines to testdata/php/tags
+       1 !_TAG_FILE_FORMAT      2       /extended format; --format=1 will not append ;" to lines/
+       2 !_TAG_FILE_SORTED      1       /0=unsorted, 1=sorted, 2=foldcase/
+       3 !_TAG_PROGRAM_NAME     Universal Ctags //
+       4 Greetable      php/sample.php  /^trait Greetable {$/;" kind:trait      line:29 language:PHP
+       5 Point  php/sample.php  /^class Point {$/;"     kind:class      line:11 language:PHP
+       6 Shape  php/sample.php  /^interface Shape {$/;" kind:interface  line:25 language:PHP
+       7 __construct    php/sample.php  /^  public function __construct(float $x, float $y) {$/;"       kind:method     line:15 language:PHP
+       8 add    php/sample.php  /^function add(int $x, int $y): int {$/;"       kind:function   line:7  language:PHP
+       9 distance       php/sample.php  /^  public function distance(): float {$/;"     kind:method     line:20 language:PHP
+      10 greet  php/sample.php  /^function greet(string $name): string {$/;"    kind:function   line:3  language:PHP
+     … +1 line (ctrl+o to expand)
+
+⏺ Bash(readtags -e -t testdata/php/tags greet && echo "---" && readtags -e -t testdata/php/tags Point)
+  ⎿  greet      php/sample.php  /^function greet(string $name): string {$/;"    kind:function   language:PHP
+     ---
+     Point      php/sample.php  /^class Point {$/;"     kind:class      language:PHP
+
+⏺ テストを追加します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 113 lines
+      299    }
+      300  }
+      301
+      302 +// sample PHP source used across unit tests.
+      303 +// Content must match testdata/php/sample.php exactly.
+      304 +var phpSample = []byte(`<?php
+      305 +
+      306 +function greet(string $name): string {
+      307 +  return "Hello, " . $name . "!";
+      308 +}
+      309 +
+      310 +function add(int $x, int $y): int {
+      311 +  return $x + $y;
+      312 +}
+      313 +
+      314 +class Point {
+      315 +  public float $x;
+      316 +  public float $y;
+      317 +
+      318 +  public function __construct(float $x, float $y) {
+      319 +    $this->x = $x;
+      320 +    $this->y = $y;
+      321 +  }
+      322 +
+      323 +  public function distance(): float {
+      324 +    return sqrt($this->x ** 2 + $this->y ** 2);
+      325 +  }
+      326 +}
+      327 +
+      328 +interface Shape {
+      329 +  public function area(): float;
+      330 +}
+      331 +
+      332 +trait Greetable {
+      333 +  public function hello(): string {
+      334 +    return "Hello from " . get_class($this);
+      335 +  }
+      336 +}
+      337 +`)
+      338 +
+      339 +// ---- resolveEndWithTreeSitterPHP tests ----
+      340 +
+      341 +func TestResolveEndWithTreeSitterPHP_FunctionMultiLine(t *testing.T) {
+      342 +  // function greet starts at line 3, ends at line 5
+      343 +  end, err := resolveEndWithTreeSitterPHP(phpSample, 3)
+      344 +  if err != nil {
+      345 +    t.Fatalf("unexpected error: %v", err)
+      346 +  }
+      347 +  if end != 5 {
+      348 +    t.Errorf("end: got %d, want 5", end)
+      349 +  }
+      350 +}
+      351 +
+      352 +func TestResolveEndWithTreeSitterPHP_FunctionSingleLine(t *testing.T) {
+      353 +  // function add starts at line 7, ends at line 9
+      354 +  end, err := resolveEndWithTreeSitterPHP(phpSample, 7)
+      355 +  if err != nil {
+      356 +    t.Fatalf("unexpected error: %v", err)
+      357 +  }
+      358 +  if end != 9 {
+      359 +    t.Errorf("end: got %d, want 9", end)
+      360 +  }
+      361 +}
+      362 +
+      363 +func TestResolveEndWithTreeSitterPHP_Class(t *testing.T) {
+      364 +  // class Point starts at line 11, ends at line 23
+      365 +  end, err := resolveEndWithTreeSitterPHP(phpSample, 11)
+      366 +  if err != nil {
+      367 +    t.Fatalf("unexpected error: %v", err)
+      368 +  }
+      369 +  if end != 23 {
+      370 +    t.Errorf("end: got %d, want 23", end)
+      371 +  }
+      372 +}
+      373 +
+      374 +func TestResolveEndWithTreeSitterPHP_Method(t *testing.T) {
+      375 +  // __construct starts at line 15, ends at line 18
+      376 +  end, err := resolveEndWithTreeSitterPHP(phpSample, 15)
+      377 +  if err != nil {
+      378 +    t.Fatalf("unexpected error: %v", err)
+      379 +  }
+      380 +  if end != 18 {
+      381 +    t.Errorf("end: got %d, want 18", end)
+      382 +  }
+      383 +}
+      384 +
+      385 +func TestResolveEndWithTreeSitterPHP_Interface(t *testing.T) {
+      386 +  // interface Shape starts at line 25, ends at line 27
+      387 +  end, err := resolveEndWithTreeSitterPHP(phpSample, 25)
+      388 +  if err != nil {
+      389 +    t.Fatalf("unexpected error: %v", err)
+      390 +  }
+      391 +  if end != 27 {
+      392 +    t.Errorf("end: got %d, want 27", end)
+      393 +  }
+      394 +}
+      395 +
+      396 +func TestResolveEndWithTreeSitterPHP_Trait(t *testing.T) {
+      397 +  // trait Greetable starts at line 29, ends at line 33
+      398 +  end, err := resolveEndWithTreeSitterPHP(phpSample, 29)
+      399 +  if err != nil {
+      400 +    t.Fatalf("unexpected error: %v", err)
+      401 +  }
+      402 +  if end != 33 {
+      403 +    t.Errorf("end: got %d, want 33", end)
+      404 +  }
+      405 +}
+      406 +
+      407 +func TestResolveEndWithTreeSitterPHP_LineNotFound(t *testing.T) {
+      408 +  // line 2 is blank — no definition starts there
+      409 +  _, err := resolveEndWithTreeSitterPHP(phpSample, 2)
+      410 +  if err == nil {
+      411 +    t.Fatal("expected error for blank line with no definition")
+      412 +  }
+      413 +}
+      414 +
+      415  // sample OCaml implementation (.ml) source used across unit tests.
+      416  // Content must match testdata/ocaml/sample.ml exactly.
+      417  var mlSample = []byte(`let greet name =
+
+⏺ isPHPFile テストと HTTP ハンドラ統合テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 19 lines
+      748    }
+      749  }
+      750
+      751 +func TestIsPHPFile(t *testing.T) {
+      752 +  cases := []struct {
+      753 +    path string
+      754 +    want bool
+      755 +  }{
+      756 +    {"index.php", true},
+      757 +    {"src/app.php", true},
+      758 +    {"main.go", false},
+      759 +    {"main.rs", false},
+      760 +    {"app.ts", false},
+      761 +    {"noextension", false},
+      762 +  }
+      763 +  for _, c := range cases {
+      764 +    if got := isPHPFile(c.path); got != c.want {
+      765 +      t.Errorf("isPHPFile(%q) = %v, want %v", c.path, got, c.want)
+      766 +    }
+      767 +  }
+      768 +}
+      769 +
+      770  func TestIsMLFile(t *testing.T) {
+      771    cases := []struct {
+      772      path string
+
+⏺ HTTP ハンドラ統合テストをファイル末尾に追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 177 lines
+      1532      }
+      1533    })
+      1534  }
+      1535 +
+      1536 +// ---- HTTP handler integration tests for PHP files ----
+      1537 +
+      1538 +func TestSnippetHandler_PHPFile_Function(t *testing.T) {
+      1539 +  withCwd(t, "testdata", func() {
+      1540 +    srv := httptest.NewServer(newHandler(true))
+      1541 +    defer srv.Close()
+      1542 +
+      1543 +    resp, err := http.Get(srv.URL + "/snippets/greet?context=php")
+      1544 +    if err != nil {
+      1545 +      t.Fatal(err)
+      1546 +    }
+      1547 +    defer resp.Body.Close()
+      1548 +
+      1549 +    if resp.StatusCode != http.StatusOK {
+      1550 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1551 +    }
+      1552 +
+      1553 +    var snippets []Snippet
+      1554 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1555 +      t.Fatalf("decode: %v", err)
+      1556 +    }
+      1557 +    if len(snippets) != 1 {
+      1558 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1559 +    }
+      1560 +    s := snippets[0]
+      1561 +    if s.Start != 3 || s.End != 5 {
+      1562 +      t.Errorf("Start/End: got %d/%d, want 3/5", s.Start, s.End)
+      1563 +    }
+      1564 +    if !strings.Contains(s.Code, "function greet") {
+      1565 +      t.Errorf("Code should contain function greet, got %q", s.Code)
+      1566 +    }
+      1567 +    if strings.Contains(s.Code, "function add") {
+      1568 +      t.Errorf("Code should not extend past end of function, got %q", s.Code)
+      1569 +    }
+      1570 +  })
+      1571 +}
+      1572 +
+      1573 +func TestSnippetHandler_PHPFile_Class(t *testing.T) {
+      1574 +  withCwd(t, "testdata", func() {
+      1575 +    srv := httptest.NewServer(newHandler(true))
+      1576 +    defer srv.Close()
+      1577 +
+      1578 +    resp, err := http.Get(srv.URL + "/snippets/Point?context=php")
+      1579 +    if err != nil {
+      1580 +      t.Fatal(err)
+      1581 +    }
+      1582 +    defer resp.Body.Close()
+      1583 +
+      1584 +    if resp.StatusCode != http.StatusOK {
+      1585 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1586 +    }
+      1587 +
+      1588 +    var snippets []Snippet
+      1589 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1590 +      t.Fatalf("decode: %v", err)
+      1591 +    }
+      1592 +    if len(snippets) != 1 {
+      1593 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1594 +    }
+      1595 +    if snippets[0].Start != 11 || snippets[0].End != 23 {
+      1596 +      t.Errorf("Start/End: got %d/%d, want 11/23", snippets[0].Start, snippets[0].End)
+      1597 +    }
+      1598 +  })
+      1599 +}
+      1600 +
+      1601 +func TestSnippetHandler_PHPFile_Method(t *testing.T) {
+      1602 +  withCwd(t, "testdata", func() {
+      1603 +    srv := httptest.NewServer(newHandler(true))
+      1604 +    defer srv.Close()
+      1605 +
+      1606 +    resp, err := http.Get(srv.URL + "/snippets/distance?context=php")
+      1607 +    if err != nil {
+      1608 +      t.Fatal(err)
+      1609 +    }
+      1610 +    defer resp.Body.Close()
+      1611 +
+      1612 +    if resp.StatusCode != http.StatusOK {
+      1613 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1614 +    }
+      1615 +
+      1616 +    var snippets []Snippet
+      1617 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1618 +      t.Fatalf("decode: %v", err)
+      1619 +    }
+      1620 +    if len(snippets) != 1 {
+      1621 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1622 +    }
+      1623 +    if snippets[0].Start != 20 || snippets[0].End != 22 {
+      1624 +      t.Errorf("Start/End: got %d/%d, want 20/22", snippets[0].Start, snippets[0].End)
+      1625 +    }
+      1626 +  })
+      1627 +}
+      1628 +
+      1629 +func TestSnippetHandler_PHPFile_Interface(t *testing.T) {
+      1630 +  withCwd(t, "testdata", func() {
+      1631 +    srv := httptest.NewServer(newHandler(true))
+      1632 +    defer srv.Close()
+      1633 +
+      1634 +    resp, err := http.Get(srv.URL + "/snippets/Shape?context=php")
+      1635 +    if err != nil {
+      1636 +      t.Fatal(err)
+      1637 +    }
+      1638 +    defer resp.Body.Close()
+      1639 +
+      1640 +    if resp.StatusCode != http.StatusOK {
+      1641 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1642 +    }
+      1643 +
+      1644 +    var snippets []Snippet
+      1645 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1646 +      t.Fatalf("decode: %v", err)
+      1647 +    }
+      1648 +    if len(snippets) != 1 {
+      1649 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1650 +    }
+      1651 +    if snippets[0].Start != 25 || snippets[0].End != 27 {
+      1652 +      t.Errorf("Start/End: got %d/%d, want 25/27", snippets[0].Start, snippets[0].End)
+      1653 +    }
+      1654 +  })
+      1655 +}
+      1656 +
+      1657 +func TestSnippetHandler_PHPFile_Trait(t *testing.T) {
+      1658 +  withCwd(t, "testdata", func() {
+      1659 +    srv := httptest.NewServer(newHandler(true))
+      1660 +    defer srv.Close()
+      1661 +
+      1662 +    resp, err := http.Get(srv.URL + "/snippets/Greetable?context=php")
+      1663 +    if err != nil {
+      1664 +      t.Fatal(err)
+      1665 +    }
+      1666 +    defer resp.Body.Close()
+      1667 +
+      1668 +    if resp.StatusCode != http.StatusOK {
+      1669 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1670 +    }
+      1671 +
+      1672 +    var snippets []Snippet
+      1673 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1674 +      t.Fatalf("decode: %v", err)
+      1675 +    }
+      1676 +    if len(snippets) != 1 {
+      1677 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1678 +    }
+      1679 +    if snippets[0].Start != 29 || snippets[0].End != 33 {
+      1680 +      t.Errorf("Start/End: got %d/%d, want 29/33", snippets[0].Start, snippets[0].End)
+      1681 +    }
+      1682 +  })
+      1683 +}
+      1684 +
+      1685 +func TestLinesHandler_PHPFile_UsesTreeSitter(t *testing.T) {
+      1686 +  withCwd(t, "testdata", func() {
+      1687 +    srv := httptest.NewServer(newHandler(true))
+      1688 +    defer srv.Close()
+      1689 +
+      1690 +    resp, err := http.Get(srv.URL + "/lines/add?context=php")
+      1691 +    if err != nil {
+      1692 +      t.Fatal(err)
+      1693 +    }
+      1694 +    defer resp.Body.Close()
+      1695 +
+      1696 +    if resp.StatusCode != http.StatusOK {
+      1697 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1698 +    }
+      1699 +
+      1700 +    var ranges []LineRange
+      1701 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1702 +      t.Fatalf("decode: %v", err)
+      1703 +    }
+      1704 +    if len(ranges) != 1 {
+      1705 +      t.Fatalf("expected 1 range, got %d", len(ranges))
+      1706 +    }
+      1707 +    if ranges[0].Start != 7 || ranges[0].End != 9 {
+      1708 +      t.Errorf("Start/End: got %d/%d, want 7/9", ranges[0].Start, ranges[0].End)
+      1709 +    }
+      1710 +  })
+      1711 +}
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.809s
+
+⏺ 全テストパス。README を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      20  | `-l` | — | Shorthand for `-listen` |
+      21  | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 -| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haske
+         -ll `.hs`, and OCaml `.ml`/`.mli`) |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haske
+         +ll `.hs`, OCaml `.ml`/`.mli`, and PHP `.php`) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      154  The end line is resolved in the following order of priority:
+      155
+      156  1. The `end` extension field recorded in the ctags tags file.
+      157 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, or `.mli`).
+      157 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, or `.php`).
+      158  3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
+      159
+      160  **Path Parameters**
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      209  The end line is resolved in the following order of priority:
+      210
+      211  1. The `end` extension field recorded in the ctags tags file.
+      212 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, or `.mli`).
+      212 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, or `.php`).
+      213  3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
+      214
+      215  **Path Parameters**
+
+⏺ Bash(go mod tidy 2>&1 && go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.599s
+
+⏺ 全テストがパスしました。変更の概要です。
+
+  ---
+  treesitter.go
+  - github.com/smacker/go-tree-sitter/php をインポート（既存パッケージに含まれているため追加依存なし）
+  - isPHPFile() — .php 拡張子を判定
+  - phpDefinitionTypes: function_definition, method_declaration, class_declaration, interface_declaration, trait_declaration
+  - resolveEndWithTreeSitterPHP() を追加
+
+  main.go
+  - case isPHPFile(tag.Path) を追加
+
+  treesitter_test.go
+  - phpSample 変数（testdata/php/sample.php と同一内容）
+  - ユニットテスト 7 本（関数/クラス/メソッド/インターフェース/トレイト/空行エラー＋add関数）
+  - isPHPFile テーブルテスト
+  - HTTP ハンドラ統合テスト 6 本（context=php で greet/Point/distance/Shape/Greetable/add を検証）
+
+  テストデータ
+  - testdata/php/sample.php（関数・クラス・インターフェース・トレイトを含む 33 行）
+  - testdata/php/tags（end フィールドなし、ASCIIソート済み）
+
+✻ Worked for 3m 11s
+```

@@ -336,6 +336,8 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 			tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
 		case isHSFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+		case isPHPFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, startLine)
 		case isMLFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, startLine)
 		case isMLIFile(tag.Path):

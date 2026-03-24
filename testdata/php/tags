@@ -1,0 +1,11 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_NAME	Universal Ctags	//
+Greetable	php/sample.php	/^trait Greetable {$/;"	kind:trait	line:29	language:PHP
+Point	php/sample.php	/^class Point {$/;"	kind:class	line:11	language:PHP
+Shape	php/sample.php	/^interface Shape {$/;"	kind:interface	line:25	language:PHP
+__construct	php/sample.php	/^  public function __construct(float $x, float $y) {$/;"	kind:method	line:15	language:PHP
+add	php/sample.php	/^function add(int $x, int $y): int {$/;"	kind:function	line:7	language:PHP
+distance	php/sample.php	/^  public function distance(): float {$/;"	kind:method	line:20	language:PHP
+greet	php/sample.php	/^function greet(string $name): string {$/;"	kind:function	line:3	language:PHP
+hello	php/sample.php	/^  public function hello(): string {$/;"	kind:method	line:30	language:PHP

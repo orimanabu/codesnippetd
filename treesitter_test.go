@@ -299,6 +299,119 @@ func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample PHP source used across unit tests.
+// Content must match testdata/php/sample.php exactly.
+var phpSample = []byte(`<?php
+
+function greet(string $name): string {
+  return "Hello, " . $name . "!";
+}
+
+function add(int $x, int $y): int {
+  return $x + $y;
+}
+
+class Point {
+  public float $x;
+  public float $y;
+
+  public function __construct(float $x, float $y) {
+    $this->x = $x;
+    $this->y = $y;
+  }
+
+  public function distance(): float {
+    return sqrt($this->x ** 2 + $this->y ** 2);
+  }
+}
+
+interface Shape {
+  public function area(): float;
+}
+
+trait Greetable {
+  public function hello(): string {
+    return "Hello from " . get_class($this);
+  }
+}
+`)
+
+// ---- resolveEndWithTreeSitterPHP tests ----
+
+func TestResolveEndWithTreeSitterPHP_FunctionMultiLine(t *testing.T) {
+	// function greet starts at line 3, ends at line 5
+	end, err := resolveEndWithTreeSitterPHP(phpSample, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 5 {
+		t.Errorf("end: got %d, want 5", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterPHP_FunctionSingleLine(t *testing.T) {
+	// function add starts at line 7, ends at line 9
+	end, err := resolveEndWithTreeSitterPHP(phpSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 9 {
+		t.Errorf("end: got %d, want 9", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterPHP_Class(t *testing.T) {
+	// class Point starts at line 11, ends at line 23
+	end, err := resolveEndWithTreeSitterPHP(phpSample, 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 23 {
+		t.Errorf("end: got %d, want 23", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterPHP_Method(t *testing.T) {
+	// __construct starts at line 15, ends at line 18
+	end, err := resolveEndWithTreeSitterPHP(phpSample, 15)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 18 {
+		t.Errorf("end: got %d, want 18", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterPHP_Interface(t *testing.T) {
+	// interface Shape starts at line 25, ends at line 27
+	end, err := resolveEndWithTreeSitterPHP(phpSample, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 27 {
+		t.Errorf("end: got %d, want 27", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterPHP_Trait(t *testing.T) {
+	// trait Greetable starts at line 29, ends at line 33
+	end, err := resolveEndWithTreeSitterPHP(phpSample, 29)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 33 {
+		t.Errorf("end: got %d, want 33", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterPHP_LineNotFound(t *testing.T) {
+	// line 2 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterPHP(phpSample, 2)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // sample OCaml implementation (.ml) source used across unit tests.
 // Content must match testdata/ocaml/sample.ml exactly.
 var mlSample = []byte(`let greet name =
@@ -631,6 +744,25 @@ func TestIsTSFile(t *testing.T) {
 	for _, c := range cases {
 		if got := isTSFile(c.path); got != c.want {
 			t.Errorf("isTSFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsPHPFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"index.php", true},
+		{"src/app.php", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"app.ts", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isPHPFile(c.path); got != c.want {
+			t.Errorf("isPHPFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -1397,6 +1529,183 @@ func TestLinesHandler_MLFile_UsesTreeSitter(t *testing.T) {
 		}
 		if ranges[0].Start != 6 || ranges[0].End != 6 {
 			t.Errorf("Start/End: got %d/%d, want 6/6", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for PHP files ----
+
+func TestSnippetHandler_PHPFile_Function(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 3 || s.End != 5 {
+			t.Errorf("Start/End: got %d/%d, want 3/5", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "function greet") {
+			t.Errorf("Code should contain function greet, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "function add") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_PHPFile_Class(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Point?context=php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 11 || snippets[0].End != 23 {
+			t.Errorf("Start/End: got %d/%d, want 11/23", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_PHPFile_Method(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/distance?context=php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 20 || snippets[0].End != 22 {
+			t.Errorf("Start/End: got %d/%d, want 20/22", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_PHPFile_Interface(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Shape?context=php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 25 || snippets[0].End != 27 {
+			t.Errorf("Start/End: got %d/%d, want 25/27", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_PHPFile_Trait(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Greetable?context=php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 29 || snippets[0].End != 33 {
+			t.Errorf("Start/End: got %d/%d, want 29/33", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_PHPFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/add?context=php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 7 || ranges[0].End != 9 {
+			t.Errorf("Start/End: got %d/%d, want 7/9", ranges[0].Start, ranges[0].End)
 		}
 	})
 }
