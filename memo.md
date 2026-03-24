@@ -5200,8 +5200,7 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
 ```
 
 ```
-❯ tree-sitterのサポート言語として、TypeScriptを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.ts`
-のときはtree sitterのTypeScript parserを使うようにしてください
+❯ tree-sitterのサポート言語として、TypeScriptを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.ts` のときはtree sitterのTypeScript parserを使うようにしてください
 
 ⏺ Read 2 files (ctrl+o to expand)
 
