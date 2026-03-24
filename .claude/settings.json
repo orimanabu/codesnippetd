@@ -4,9 +4,10 @@
     "allow": [
       "Bash(git status)",
       "Bash(git diff)",
-      "Read(./memo.md)"
     ],
     "deny": [
+      "Read(./memo.md)",
+      "Read(./do.sh)",
       "Bash(curl -fsSL:*)",
       "Bash(wget:*)",
       "Bash(nc:*)",
