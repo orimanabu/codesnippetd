@@ -1,0 +1,13 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_NAME	Universal Ctags	//
+Circle	ocaml/sample.ml	/^module Circle = struct$/;"	kind:module	line:17	language:OCaml
+SHAPE	ocaml/sample.ml	/^module type SHAPE = sig$/;"	kind:module	line:13	language:OCaml
+add	ocaml/sample.ml	/^let add x y = x + y$/;"	kind:function	line:4	language:OCaml
+add	ocaml/sample.mli	/^val add : int -> int -> int$/;"	kind:value	line:3	language:OCaml
+color	ocaml/sample.ml	/^type color = Red | Green | Blue$/;"	kind:type	line:6	language:OCaml
+counter	ocaml/sample.ml	/^class counter init = object$/;"	kind:class	line:21	language:OCaml
+greet	ocaml/sample.ml	/^let greet name =$/;"	kind:function	line:1	language:OCaml
+greet	ocaml/sample.mli	/^val greet : string -> string$/;"	kind:value	line:1	language:OCaml
+point	ocaml/sample.ml	/^type point = {$/;"	kind:type	line:8	language:OCaml
+point	ocaml/sample.mli	/^type point = {$/;"	kind:type	line:7	language:OCaml

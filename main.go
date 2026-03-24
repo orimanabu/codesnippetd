@@ -336,6 +336,10 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 			tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
 		case isHSFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+		case isMLFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, startLine)
+		case isMLIFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, startLine)
 		}
 		if tsErr == nil && tsEnd > 0 {
 			return startLine, tsEnd, nil

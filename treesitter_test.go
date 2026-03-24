@@ -299,6 +299,183 @@ func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample OCaml implementation (.ml) source used across unit tests.
+// Content must match testdata/ocaml/sample.ml exactly.
+var mlSample = []byte(`let greet name =
+  "Hello, " ^ name ^ "!"
+
+let add x y = x + y
+
+type color = Red | Green | Blue
+
+type point = {
+  x: float;
+  y: float;
+}
+
+module type SHAPE = sig
+  val area : point -> float
+end
+
+module Circle = struct
+  let area r = Float.pi *. r *. r
+end
+
+class counter init = object
+  val mutable count = init
+  method increment = count <- count + 1
+  method get = count
+end
+`)
+
+// sample OCaml interface (.mli) source used across unit tests.
+// Content must match testdata/ocaml/sample.mli exactly.
+var mliSample = []byte(`val greet : string -> string
+
+val add : int -> int -> int
+
+type color = Red | Green | Blue
+
+type point = {
+  x: float;
+  y: float;
+}
+
+module type SHAPE = sig
+  val area : point -> float
+end
+`)
+
+// ---- resolveEndWithTreeSitterOCaml tests (.ml) ----
+
+func TestResolveEndWithTreeSitterOCaml_FunctionMultiLine(t *testing.T) {
+	// let greet name = ... starts at line 1, ends at line 2
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 2 {
+		t.Errorf("end: got %d, want 2", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_FunctionSingleLine(t *testing.T) {
+	// let add x y = x + y starts at line 4, ends at line 4
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 4)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 4 {
+		t.Errorf("end: got %d, want 4", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_TypeVariant(t *testing.T) {
+	// type color starts at line 6, ends at line 6
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 6)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 6 {
+		t.Errorf("end: got %d, want 6", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_TypeRecord(t *testing.T) {
+	// type point = { ... } starts at line 8, ends at line 11
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 8)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 11 {
+		t.Errorf("end: got %d, want 11", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_ModuleType(t *testing.T) {
+	// module type SHAPE starts at line 13, ends at line 15
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 13)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 15 {
+		t.Errorf("end: got %d, want 15", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_Module(t *testing.T) {
+	// module Circle starts at line 17, ends at line 19
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 17)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 19 {
+		t.Errorf("end: got %d, want 19", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_Class(t *testing.T) {
+	// class counter starts at line 21, ends at line 25
+	end, err := resolveEndWithTreeSitterOCaml(mlSample, 21)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 25 {
+		t.Errorf("end: got %d, want 25", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCaml_LineNotFound(t *testing.T) {
+	// line 3 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterOCaml(mlSample, 3)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
+// ---- resolveEndWithTreeSitterOCamlInterface tests (.mli) ----
+
+func TestResolveEndWithTreeSitterOCamlInterface_ValSingleLine(t *testing.T) {
+	// val greet starts at line 1, ends at line 1
+	end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 1 {
+		t.Errorf("end: got %d, want 1", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCamlInterface_TypeRecord(t *testing.T) {
+	// type point = { ... } starts at line 7, ends at line 10
+	end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 10 {
+		t.Errorf("end: got %d, want 10", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCamlInterface_ModuleType(t *testing.T) {
+	// module type SHAPE starts at line 12, ends at line 14
+	end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 12)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 14 {
+		t.Errorf("end: got %d, want 14", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterOCamlInterface_LineNotFound(t *testing.T) {
+	// line 2 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 2)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // sample Haskell source used across unit tests.
 // Content must match testdata/hs/sample.hs exactly.
 var hsSample = []byte(`greet :: String -> String
@@ -454,6 +631,44 @@ func TestIsTSFile(t *testing.T) {
 	for _, c := range cases {
 		if got := isTSFile(c.path); got != c.want {
 			t.Errorf("isTSFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsMLFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.ml", true},
+		{"src/lib.ml", true},
+		{"main.mli", false},
+		{"main.go", false},
+		{"main.rs", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isMLFile(c.path); got != c.want {
+			t.Errorf("isMLFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsMLIFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.mli", true},
+		{"src/lib.mli", true},
+		{"main.ml", false},
+		{"main.go", false},
+		{"main.rs", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isMLIFile(c.path); got != c.want {
+			t.Errorf("isMLIFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -1011,6 +1226,177 @@ func TestLinesHandler_HSFile_UsesTreeSitter(t *testing.T) {
 		}
 		if ranges[0].Start != 13 || ranges[0].End != 16 {
 			t.Errorf("Start/End: got %d/%d, want 13/16", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for OCaml .ml files ----
+
+func TestSnippetHandler_MLFile_FunctionMultiLine(t *testing.T) {
+	// let greet spans lines 1-2; tree-sitter must resolve the end.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=ocaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		// greet exists in both sample.ml (line 1) and sample.mli (line 1)
+		if len(snippets) != 2 {
+			t.Fatalf("expected 2 snippets (ml + mli), got %d", len(snippets))
+		}
+		byPath := map[string]Snippet{}
+		for _, s := range snippets {
+			byPath[s.Path] = s
+		}
+
+		ml := byPath["ocaml/sample.ml"]
+		if ml.Start != 1 || ml.End != 2 {
+			t.Errorf(".ml Start/End: got %d/%d, want 1/2", ml.Start, ml.End)
+		}
+		if !strings.Contains(ml.Code, "let greet") {
+			t.Errorf(".ml Code should contain let greet, got %q", ml.Code)
+		}
+
+		mli := byPath["ocaml/sample.mli"]
+		if mli.Start != 1 || mli.End != 1 {
+			t.Errorf(".mli Start/End: got %d/%d, want 1/1", mli.Start, mli.End)
+		}
+		if !strings.Contains(mli.Code, "val greet") {
+			t.Errorf(".mli Code should contain val greet, got %q", mli.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_MLFile_TypeRecord(t *testing.T) {
+	// type point spans lines 8-11 in .ml, lines 7-10 in .mli
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/point?context=ocaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 2 {
+			t.Fatalf("expected 2 snippets (ml + mli), got %d", len(snippets))
+		}
+		byPath := map[string]Snippet{}
+		for _, s := range snippets {
+			byPath[s.Path] = s
+		}
+		if byPath["ocaml/sample.ml"].Start != 8 || byPath["ocaml/sample.ml"].End != 11 {
+			ml := byPath["ocaml/sample.ml"]
+			t.Errorf(".ml Start/End: got %d/%d, want 8/11", ml.Start, ml.End)
+		}
+		if byPath["ocaml/sample.mli"].Start != 7 || byPath["ocaml/sample.mli"].End != 10 {
+			mli := byPath["ocaml/sample.mli"]
+			t.Errorf(".mli Start/End: got %d/%d, want 7/10", mli.Start, mli.End)
+		}
+	})
+}
+
+func TestSnippetHandler_MLFile_Module(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Circle?context=ocaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 17 || snippets[0].End != 19 {
+			t.Errorf("Start/End: got %d/%d, want 17/19", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_MLFile_Class(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/counter?context=ocaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 21 || snippets[0].End != 25 {
+			t.Errorf("Start/End: got %d/%d, want 21/25", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_MLFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/color?context=ocaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 6 || ranges[0].End != 6 {
+			t.Errorf("Start/End: got %d/%d, want 6/6", ranges[0].Start, ranges[0].End)
 		}
 	})
 }

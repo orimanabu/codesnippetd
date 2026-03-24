@@ -10,6 +10,7 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 	haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+	ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
 )
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
@@ -160,4 +161,44 @@ var hsDefinitionTypes = map[string]bool{
 // definition starting at startLine (1-based).
 func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
 	return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+}
+
+// isMLFile reports whether path is an OCaml implementation file.
+func isMLFile(path string) bool {
+	return filepath.Ext(path) == ".ml"
+}
+
+// isMLIFile reports whether path is an OCaml interface file.
+func isMLIFile(path string) bool {
+	return filepath.Ext(path) == ".mli"
+}
+
+// ocamlMLDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in OCaml implementation (.ml) source files.
+var ocamlMLDefinitionTypes = map[string]bool{
+	"value_definition":       true,
+	"type_definition":        true,
+	"module_definition":      true,
+	"module_type_definition": true,
+	"class_definition":       true,
+}
+
+// ocamlMLIDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in OCaml interface (.mli) source files.
+var ocamlMLIDefinitionTypes = map[string]bool{
+	"value_specification":    true,
+	"type_definition":        true,
+	"module_type_definition": true,
+}
+
+// resolveEndWithTreeSitterOCaml returns the 1-based end line of the OCaml
+// implementation (.ml) definition starting at startLine (1-based).
+func resolveEndWithTreeSitterOCaml(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), ocamlMLDefinitionTypes, content, startLine)
+}
+
+// resolveEndWithTreeSitterOCamlInterface returns the 1-based end line of the
+// OCaml interface (.mli) definition starting at startLine (1-based).
+func resolveEndWithTreeSitterOCamlInterface(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), ocamlMLIDefinitionTypes, content, startLine)
 }

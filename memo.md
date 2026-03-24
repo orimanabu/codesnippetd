@@ -6376,3 +6376,684 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
 
 ✻ Churned for 7m 19s
 ```
+
+```
+❯ tree-sitterのサポート言語として、OCamlを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.ml` もしくは
+`.mli` のときはtree sitterのOCaml parserを使うようにしてください。テストコードとREADME.mdの更新もお願いします。parserは https://github.com/tree-sitter/tree-sitter-ocaml
+が使えるかもしれません
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ smacker/go-tree-sitter に OCaml が含まれています。.mli 用の interface パーサーも確認します。
+
+⏺ Bash(ls /Users/ori/go/pkg/mod/github.com/smacker/go-tree-sitter@v0.0.0-20240827094217-dd81d9e9be82/ocaml/ && find /Users/ori/go/pkg/mod/github.com/smacker/go-tree-si…)
+  ⎿  Error: Exit code 1
+     alloc.h
+     binding_test.go
+     binding.go
+     parser.c
+     parser.h
+     scanner.c
+     scanner.h
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Bash(GOPROXY=https://proxy.golang.org go list -m -versions github.com/tree-sitter/tree-sitter-ocaml 2>&1 | head -3)
+  ⎿  github.com/tree-sitter/tree-sitter-ocaml v0.11.0 v0.12.0 v0.12.1 v0.12.2 v0.13.0 v0.13.1 v0.14.1 v0.14.2 v0.14.3 v0.15.0 v0.16.0 v0.19.0 v0.20.0 v0.20.1 v0.20.2 v0.20.3 v
+     0.20.4 v0.21.0 v0.21.1 v0.21.2 v0.22.0 v0.23.0 v0.23.1 v0.23.2 v0.24.0 v0.24.1 v0.24.2
+
+⏺ Bash(GOPROXY=https://proxy.golang.org go get github.com/tree-sitter/tree-sitter-ocaml@latest 2>&1)
+  ⎿  go: downloading github.com/tree-sitter/tree-sitter-ocaml v0.24.2
+     go: added github.com/tree-sitter/tree-sitter-ocaml v0.24.2
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ 両方のパーサーがあります。次に OCaml の AST ノードタイプを調査します。
+
+⏺ Bash(cat > /Users/ori/devel/src/github.com/orimanabu/codesnippetd/ocprobe_test.go << 'EOF'
+      package main…)
+  ⎿  === RUN   TestOCamlMLNodes
+     === .ml nodes ===
+     depth=0 line= 1-26 type=compilation_unit                    "let greet name =\n  \"Hello, \" ^ name ^ \"!\"\n\nlet add"
+     … +21 lines (ctrl+o to expand)
+
+⏺ ノードタイプと end 行を確認できました。プローブでさらに詳細なデータを取得します。
+
+⏺ Bash(cat >> /Users/ori/devel/src/github.com/orimanabu/codesnippetd/ocprobe_test.go << 'EOF'…)
+  ⎿  === RUN   TestOCamlEndLines
+     === .ml end lines ===
+     line  1 -> end 2 (type=value_definition)
+     … +12 lines (ctrl+o to expand)
+
+⏺ 期待値が確定しました。プローブを削除して実装を進めます。
+
+⏺ Bash(rm /Users/ori/devel/src/github.com/orimanabu/codesnippetd/ocprobe_test.go)
+  ⎿  Done
+
+⏺ treesitter.go に OCaml サポートを追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+      10    "github.com/smacker/go-tree-sitter/rust"
+      11    "github.com/smacker/go-tree-sitter/typescript/typescript"
+      12    haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+      13 +  ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
+      14  )
+      15
+      16  // rustDefinitionTypes is the set of tree-sitter node types treated as
+
+⏺ Update(treesitter.go)
+  ⎿  Added 40 lines
+      162  func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
+      163    return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      164  }
+      165 +
+      166 +// isMLFile reports whether path is an OCaml implementation file.
+      167 +func isMLFile(path string) bool {
+      168 +  return filepath.Ext(path) == ".ml"
+      169 +}
+      170 +
+      171 +// isMLIFile reports whether path is an OCaml interface file.
+      172 +func isMLIFile(path string) bool {
+      173 +  return filepath.Ext(path) == ".mli"
+      174 +}
+      175 +
+      176 +// ocamlMLDefinitionTypes is the set of tree-sitter node types treated as
+      177 +// definitions in OCaml implementation (.ml) source files.
+      178 +var ocamlMLDefinitionTypes = map[string]bool{
+      179 +  "value_definition":       true,
+      180 +  "type_definition":        true,
+      181 +  "module_definition":      true,
+      182 +  "module_type_definition": true,
+      183 +  "class_definition":       true,
+      184 +}
+      185 +
+      186 +// ocamlMLIDefinitionTypes is the set of tree-sitter node types treated as
+      187 +// definitions in OCaml interface (.mli) source files.
+      188 +var ocamlMLIDefinitionTypes = map[string]bool{
+      189 +  "value_specification":    true,
+      190 +  "type_definition":        true,
+      191 +  "module_type_definition": true,
+      192 +}
+      193 +
+      194 +// resolveEndWithTreeSitterOCaml returns the 1-based end line of the OCaml
+      195 +// implementation (.ml) definition starting at startLine (1-based).
+      196 +func resolveEndWithTreeSitterOCaml(content []byte, startLine int) (int, error) {
+      197 +  return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), ocamlMLDefinitionTypes, content, startLine)
+      198 +}
+      199 +
+      200 +// resolveEndWithTreeSitterOCamlInterface returns the 1-based end line of the
+      201 +// OCaml interface (.mli) definition starting at startLine (1-based).
+      202 +func resolveEndWithTreeSitterOCamlInterface(content []byte, startLine int) (int, error) {
+      203 +  return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), ocamlMLIDefinitionTypes, content, startLine)
+      204 +}
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ main.go に OCaml のケースを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 4 lines
+      336        tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+      337      case isHSFile(tag.Path):
+      338        tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+      339 +    case isMLFile(tag.Path):
+      340 +      tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, startLine)
+      341 +    case isMLIFile(tag.Path):
+      342 +      tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, startLine)
+      343      }
+      344      if tsErr == nil && tsEnd > 0 {
+      345        return startLine, tsEnd, nil
+  ⎿  Found 4 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ テストデータを作成します。.ml と .mli を同じ testdata/ocaml/ ディレクトリに置きます。
+
+⏺ Bash(mkdir -p /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata/ocaml)
+  ⎿  Done
+
+⏺ Write(testdata/ocaml/sample.ml)
+  ⎿  Wrote 25 lines to testdata/ocaml/sample.ml
+       1 let greet name =
+       2   "Hello, " ^ name ^ "!"
+       3
+       4 let add x y = x + y
+       5
+       6 type color = Red | Green | Blue
+       7
+       8 type point = {
+       9   x: float;
+      10   y: float;
+     … +15 lines (ctrl+o to expand)
+
+⏺ Write(testdata/ocaml/sample.mli)
+  ⎿  Wrote 14 lines to testdata/ocaml/sample.mli
+       1 val greet : string -> string
+       2
+       3 val add : int -> int -> int
+       4
+       5 type color = Red | Green | Blue
+       6
+       7 type point = {
+       8   x: float;
+       9   y: float;
+      10 }
+     … +4 lines (ctrl+o to expand)
+
+⏺ tags ファイルを作成します（.ml と .mli の両方のエントリを含む）。
+
+⏺ Write(testdata/ocaml/tags)
+  ⎿  Wrote 13 lines to testdata/ocaml/tags
+       1 !_TAG_FILE_FORMAT      2       /extended format; --format=1 will not append ;" to lines/
+       2 !_TAG_FILE_SORTED      1       /0=unsorted, 1=sorted, 2=foldcase/
+       3 !_TAG_PROGRAM_NAME     Universal Ctags //
+       4 Circle ocaml/sample.ml /^module Circle = struct$/;"    kind:module     line:17 language:OCaml
+       5 SHAPE  ocaml/sample.ml /^module type SHAPE = sig$/;"   kind:module     line:13 language:OCaml
+       6 add    ocaml/sample.ml /^let add x y = x + y$/;"       kind:function   line:4  language:OCaml
+       7 add    ocaml/sample.mli        /^val add : int -> int -> int$/;"       kind:value      line:3  language:OCaml
+       8 color  ocaml/sample.ml /^type color = Red | Green | Blue$/;"   kind:type       line:6  language:OCaml
+       9 counter        ocaml/sample.ml /^class counter init = object$/;"       kind:class      line:21 language:OCaml
+      10 greet  ocaml/sample.ml /^let greet name =$/;"  kind:function   line:1  language:OCaml
+     … +3 lines (ctrl+o to expand)
+
+⏺ Bash(readtags -e -t testdata/ocaml/tags greet 2>&1 && echo "---" && readtags -e -t testdata/ocaml/tags point 2>&1)
+  ⎿  greet      ocaml/sample.ml /^let greet name =$/;"  kind:function   language:OCaml
+     greet      ocaml/sample.mli        /^val greet : string -> string$/;"      kind:value      language:OCaml
+     ---
+     … +2 lines (ctrl+o to expand)
+
+⏺ greet と point は .ml と .mli の両方を返します。テストを追加します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 177 lines
+      299    }
+      300  }
+      301
+      302 +// sample OCaml implementation (.ml) source used across unit tests.
+      303 +// Content must match testdata/ocaml/sample.ml exactly.
+      304 +var mlSample = []byte(`let greet name =
+      305 +  "Hello, " ^ name ^ "!"
+      306 +
+      307 +let add x y = x + y
+      308 +
+      309 +type color = Red | Green | Blue
+      310 +
+      311 +type point = {
+      312 +  x: float;
+      313 +  y: float;
+      314 +}
+      315 +
+      316 +module type SHAPE = sig
+      317 +  val area : point -> float
+      318 +end
+      319 +
+      320 +module Circle = struct
+      321 +  let area r = Float.pi *. r *. r
+      322 +end
+      323 +
+      324 +class counter init = object
+      325 +  val mutable count = init
+      326 +  method increment = count <- count + 1
+      327 +  method get = count
+      328 +end
+      329 +`)
+      330 +
+      331 +// sample OCaml interface (.mli) source used across unit tests.
+      332 +// Content must match testdata/ocaml/sample.mli exactly.
+      333 +var mliSample = []byte(`val greet : string -> string
+      334 +
+      335 +val add : int -> int -> int
+      336 +
+      337 +type color = Red | Green | Blue
+      338 +
+      339 +type point = {
+      340 +  x: float;
+      341 +  y: float;
+      342 +}
+      343 +
+      344 +module type SHAPE = sig
+      345 +  val area : point -> float
+      346 +end
+      347 +`)
+      348 +
+      349 +// ---- resolveEndWithTreeSitterOCaml tests (.ml) ----
+      350 +
+      351 +func TestResolveEndWithTreeSitterOCaml_FunctionMultiLine(t *testing.T) {
+      352 +  // let greet name = ... starts at line 1, ends at line 2
+      353 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 1)
+      354 +  if err != nil {
+      355 +    t.Fatalf("unexpected error: %v", err)
+      356 +  }
+      357 +  if end != 2 {
+      358 +    t.Errorf("end: got %d, want 2", end)
+      359 +  }
+      360 +}
+      361 +
+      362 +func TestResolveEndWithTreeSitterOCaml_FunctionSingleLine(t *testing.T) {
+      363 +  // let add x y = x + y starts at line 4, ends at line 4
+      364 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 4)
+      365 +  if err != nil {
+      366 +    t.Fatalf("unexpected error: %v", err)
+      367 +  }
+      368 +  if end != 4 {
+      369 +    t.Errorf("end: got %d, want 4", end)
+      370 +  }
+      371 +}
+      372 +
+      373 +func TestResolveEndWithTreeSitterOCaml_TypeVariant(t *testing.T) {
+      374 +  // type color starts at line 6, ends at line 6
+      375 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 6)
+      376 +  if err != nil {
+      377 +    t.Fatalf("unexpected error: %v", err)
+      378 +  }
+      379 +  if end != 6 {
+      380 +    t.Errorf("end: got %d, want 6", end)
+      381 +  }
+      382 +}
+      383 +
+      384 +func TestResolveEndWithTreeSitterOCaml_TypeRecord(t *testing.T) {
+      385 +  // type point = { ... } starts at line 8, ends at line 11
+      386 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 8)
+      387 +  if err != nil {
+      388 +    t.Fatalf("unexpected error: %v", err)
+      389 +  }
+      390 +  if end != 11 {
+      391 +    t.Errorf("end: got %d, want 11", end)
+      392 +  }
+      393 +}
+      394 +
+      395 +func TestResolveEndWithTreeSitterOCaml_ModuleType(t *testing.T) {
+      396 +  // module type SHAPE starts at line 13, ends at line 15
+      397 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 13)
+      398 +  if err != nil {
+      399 +    t.Fatalf("unexpected error: %v", err)
+      400 +  }
+      401 +  if end != 15 {
+      402 +    t.Errorf("end: got %d, want 15", end)
+      403 +  }
+      404 +}
+      405 +
+      406 +func TestResolveEndWithTreeSitterOCaml_Module(t *testing.T) {
+      407 +  // module Circle starts at line 17, ends at line 19
+      408 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 17)
+      409 +  if err != nil {
+      410 +    t.Fatalf("unexpected error: %v", err)
+      411 +  }
+      412 +  if end != 19 {
+      413 +    t.Errorf("end: got %d, want 19", end)
+      414 +  }
+      415 +}
+      416 +
+      417 +func TestResolveEndWithTreeSitterOCaml_Class(t *testing.T) {
+      418 +  // class counter starts at line 21, ends at line 25
+      419 +  end, err := resolveEndWithTreeSitterOCaml(mlSample, 21)
+      420 +  if err != nil {
+      421 +    t.Fatalf("unexpected error: %v", err)
+      422 +  }
+      423 +  if end != 25 {
+      424 +    t.Errorf("end: got %d, want 25", end)
+      425 +  }
+      426 +}
+      427 +
+      428 +func TestResolveEndWithTreeSitterOCaml_LineNotFound(t *testing.T) {
+      429 +  // line 3 is blank — no definition starts there
+      430 +  _, err := resolveEndWithTreeSitterOCaml(mlSample, 3)
+      431 +  if err == nil {
+      432 +    t.Fatal("expected error for blank line with no definition")
+      433 +  }
+      434 +}
+      435 +
+      436 +// ---- resolveEndWithTreeSitterOCamlInterface tests (.mli) ----
+      437 +
+      438 +func TestResolveEndWithTreeSitterOCamlInterface_ValSingleLine(t *testing.T) {
+      439 +  // val greet starts at line 1, ends at line 1
+      440 +  end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 1)
+      441 +  if err != nil {
+      442 +    t.Fatalf("unexpected error: %v", err)
+      443 +  }
+      444 +  if end != 1 {
+      445 +    t.Errorf("end: got %d, want 1", end)
+      446 +  }
+      447 +}
+      448 +
+      449 +func TestResolveEndWithTreeSitterOCamlInterface_TypeRecord(t *testing.T) {
+      450 +  // type point = { ... } starts at line 7, ends at line 10
+      451 +  end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 7)
+      452 +  if err != nil {
+      453 +    t.Fatalf("unexpected error: %v", err)
+      454 +  }
+      455 +  if end != 10 {
+      456 +    t.Errorf("end: got %d, want 10", end)
+      457 +  }
+      458 +}
+      459 +
+      460 +func TestResolveEndWithTreeSitterOCamlInterface_ModuleType(t *testing.T) {
+      461 +  // module type SHAPE starts at line 12, ends at line 14
+      462 +  end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 12)
+      463 +  if err != nil {
+      464 +    t.Fatalf("unexpected error: %v", err)
+      465 +  }
+      466 +  if end != 14 {
+      467 +    t.Errorf("end: got %d, want 14", end)
+      468 +  }
+      469 +}
+      470 +
+      471 +func TestResolveEndWithTreeSitterOCamlInterface_LineNotFound(t *testing.T) {
+      472 +  // line 2 is blank — no definition starts there
+      473 +  _, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 2)
+      474 +  if err == nil {
+      475 +    t.Fatal("expected error for blank line with no definition")
+      476 +  }
+      477 +}
+      478 +
+      479  // sample Haskell source used across unit tests.
+      480  // Content must match testdata/hs/sample.hs exactly.
+      481  var hsSample = []byte(`greet :: String -> String
+
+⏺ isMLFile/isMLIFile テストと HTTP ハンドラ統合テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 38 lines
+      635    }
+      636  }
+      637
+      638 +func TestIsMLFile(t *testing.T) {
+      639 +  cases := []struct {
+      640 +    path string
+      641 +    want bool
+      642 +  }{
+      643 +    {"main.ml", true},
+      644 +    {"src/lib.ml", true},
+      645 +    {"main.mli", false},
+      646 +    {"main.go", false},
+      647 +    {"main.rs", false},
+      648 +    {"noextension", false},
+      649 +  }
+      650 +  for _, c := range cases {
+      651 +    if got := isMLFile(c.path); got != c.want {
+      652 +      t.Errorf("isMLFile(%q) = %v, want %v", c.path, got, c.want)
+      653 +    }
+      654 +  }
+      655 +}
+      656 +
+      657 +func TestIsMLIFile(t *testing.T) {
+      658 +  cases := []struct {
+      659 +    path string
+      660 +    want bool
+      661 +  }{
+      662 +    {"main.mli", true},
+      663 +    {"src/lib.mli", true},
+      664 +    {"main.ml", false},
+      665 +    {"main.go", false},
+      666 +    {"main.rs", false},
+      667 +    {"noextension", false},
+      668 +  }
+      669 +  for _, c := range cases {
+      670 +    if got := isMLIFile(c.path); got != c.want {
+      671 +      t.Errorf("isMLIFile(%q) = %v, want %v", c.path, got, c.want)
+      672 +    }
+      673 +  }
+      674 +}
+      675 +
+      676  func TestIsHSFile(t *testing.T) {
+      677    cases := []struct {
+      678      path string
+
+⏺ HTTP ハンドラ統合テストをファイル末尾に追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 171 lines
+      1229      }
+      1230    })
+      1231  }
+      1232 +
+      1233 +// ---- HTTP handler integration tests for OCaml .ml files ----
+      1234 +
+      1235 +func TestSnippetHandler_MLFile_FunctionMultiLine(t *testing.T) {
+      1236 +  // let greet spans lines 1-2; tree-sitter must resolve the end.
+      1237 +  withCwd(t, "testdata", func() {
+      1238 +    srv := httptest.NewServer(newHandler(true))
+      1239 +    defer srv.Close()
+      1240 +
+      1241 +    resp, err := http.Get(srv.URL + "/snippets/greet?context=ocaml")
+      1242 +    if err != nil {
+      1243 +      t.Fatal(err)
+      1244 +    }
+      1245 +    defer resp.Body.Close()
+      1246 +
+      1247 +    if resp.StatusCode != http.StatusOK {
+      1248 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1249 +    }
+      1250 +
+      1251 +    var snippets []Snippet
+      1252 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1253 +      t.Fatalf("decode: %v", err)
+      1254 +    }
+      1255 +    // greet exists in both sample.ml (line 1) and sample.mli (line 1)
+      1256 +    if len(snippets) != 2 {
+      1257 +      t.Fatalf("expected 2 snippets (ml + mli), got %d", len(snippets))
+      1258 +    }
+      1259 +    byPath := map[string]Snippet{}
+      1260 +    for _, s := range snippets {
+      1261 +      byPath[s.Path] = s
+      1262 +    }
+      1263 +
+      1264 +    ml := byPath["ocaml/sample.ml"]
+      1265 +    if ml.Start != 1 || ml.End != 2 {
+      1266 +      t.Errorf(".ml Start/End: got %d/%d, want 1/2", ml.Start, ml.End)
+      1267 +    }
+      1268 +    if !strings.Contains(ml.Code, "let greet") {
+      1269 +      t.Errorf(".ml Code should contain let greet, got %q", ml.Code)
+      1270 +    }
+      1271 +
+      1272 +    mli := byPath["ocaml/sample.mli"]
+      1273 +    if mli.Start != 1 || mli.End != 1 {
+      1274 +      t.Errorf(".mli Start/End: got %d/%d, want 1/1", mli.Start, mli.End)
+      1275 +    }
+      1276 +    if !strings.Contains(mli.Code, "val greet") {
+      1277 +      t.Errorf(".mli Code should contain val greet, got %q", mli.Code)
+      1278 +    }
+      1279 +  })
+      1280 +}
+      1281 +
+      1282 +func TestSnippetHandler_MLFile_TypeRecord(t *testing.T) {
+      1283 +  // type point spans lines 8-11 in .ml, lines 7-10 in .mli
+      1284 +  withCwd(t, "testdata", func() {
+      1285 +    srv := httptest.NewServer(newHandler(true))
+      1286 +    defer srv.Close()
+      1287 +
+      1288 +    resp, err := http.Get(srv.URL + "/snippets/point?context=ocaml")
+      1289 +    if err != nil {
+      1290 +      t.Fatal(err)
+      1291 +    }
+      1292 +    defer resp.Body.Close()
+      1293 +
+      1294 +    if resp.StatusCode != http.StatusOK {
+      1295 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1296 +    }
+      1297 +
+      1298 +    var snippets []Snippet
+      1299 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1300 +      t.Fatalf("decode: %v", err)
+      1301 +    }
+      1302 +    if len(snippets) != 2 {
+      1303 +      t.Fatalf("expected 2 snippets (ml + mli), got %d", len(snippets))
+      1304 +    }
+      1305 +    byPath := map[string]Snippet{}
+      1306 +    for _, s := range snippets {
+      1307 +      byPath[s.Path] = s
+      1308 +    }
+      1309 +    if byPath["ocaml/sample.ml"].Start != 8 || byPath["ocaml/sample.ml"].End != 11 {
+      1310 +      ml := byPath["ocaml/sample.ml"]
+      1311 +      t.Errorf(".ml Start/End: got %d/%d, want 8/11", ml.Start, ml.End)
+      1312 +    }
+      1313 +    if byPath["ocaml/sample.mli"].Start != 7 || byPath["ocaml/sample.mli"].End != 10 {
+      1314 +      mli := byPath["ocaml/sample.mli"]
+      1315 +      t.Errorf(".mli Start/End: got %d/%d, want 7/10", mli.Start, mli.End)
+      1316 +    }
+      1317 +  })
+      1318 +}
+      1319 +
+      1320 +func TestSnippetHandler_MLFile_Module(t *testing.T) {
+      1321 +  withCwd(t, "testdata", func() {
+      1322 +    srv := httptest.NewServer(newHandler(true))
+      1323 +    defer srv.Close()
+      1324 +
+      1325 +    resp, err := http.Get(srv.URL + "/snippets/Circle?context=ocaml")
+      1326 +    if err != nil {
+      1327 +      t.Fatal(err)
+      1328 +    }
+      1329 +    defer resp.Body.Close()
+      1330 +
+      1331 +    if resp.StatusCode != http.StatusOK {
+      1332 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1333 +    }
+      1334 +
+      1335 +    var snippets []Snippet
+      1336 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1337 +      t.Fatalf("decode: %v", err)
+      1338 +    }
+      1339 +    if len(snippets) != 1 {
+      1340 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1341 +    }
+      1342 +    if snippets[0].Start != 17 || snippets[0].End != 19 {
+      1343 +      t.Errorf("Start/End: got %d/%d, want 17/19", snippets[0].Start, snippets[0].End)
+      1344 +    }
+      1345 +  })
+      1346 +}
+      1347 +
+      1348 +func TestSnippetHandler_MLFile_Class(t *testing.T) {
+      1349 +  withCwd(t, "testdata", func() {
+      1350 +    srv := httptest.NewServer(newHandler(true))
+      1351 +    defer srv.Close()
+      1352 +
+      1353 +    resp, err := http.Get(srv.URL + "/snippets/counter?context=ocaml")
+      1354 +    if err != nil {
+      1355 +      t.Fatal(err)
+      1356 +    }
+      1357 +    defer resp.Body.Close()
+      1358 +
+      1359 +    if resp.StatusCode != http.StatusOK {
+      1360 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1361 +    }
+      1362 +
+      1363 +    var snippets []Snippet
+      1364 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1365 +      t.Fatalf("decode: %v", err)
+      1366 +    }
+      1367 +    if len(snippets) != 1 {
+      1368 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1369 +    }
+      1370 +    if snippets[0].Start != 21 || snippets[0].End != 25 {
+      1371 +      t.Errorf("Start/End: got %d/%d, want 21/25", snippets[0].Start, snippets[0].End)
+      1372 +    }
+      1373 +  })
+      1374 +}
+      1375 +
+      1376 +func TestLinesHandler_MLFile_UsesTreeSitter(t *testing.T) {
+      1377 +  withCwd(t, "testdata", func() {
+      1378 +    srv := httptest.NewServer(newHandler(true))
+      1379 +    defer srv.Close()
+      1380 +
+      1381 +    resp, err := http.Get(srv.URL + "/lines/color?context=ocaml")
+      1382 +    if err != nil {
+      1383 +      t.Fatal(err)
+      1384 +    }
+      1385 +    defer resp.Body.Close()
+      1386 +
+      1387 +    if resp.StatusCode != http.StatusOK {
+      1388 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1389 +    }
+      1390 +
+      1391 +    var ranges []LineRange
+      1392 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1393 +      t.Fatalf("decode: %v", err)
+      1394 +    }
+      1395 +    if len(ranges) != 1 {
+      1396 +      t.Fatalf("expected 1 range, got %d", len(ranges))
+      1397 +    }
+      1398 +    if ranges[0].Start != 6 || ranges[0].End != 6 {
+      1399 +      t.Errorf("Start/End: got %d/%d, want 6/6", ranges[0].Start, ranges[0].End)
+      1400 +    }
+      1401 +  })
+      1402 +}
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       1.364s
+  ⎿  (timeout 1m 30s)
+
+⏺ 全テストパス。README を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      20  | `-l` | — | Shorthand for `-listen` |
+      21  | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 -| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, and H
+         -askell `.hs`) |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haske
+         +ll `.hs`, and OCaml `.ml`/`.mli`) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      154  The end line is resolved in the following order of priority:
+      155
+      156  1. The `end` extension field recorded in the ctags tags file.
+      157 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, or `.hs`).
+      157 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, or `.mli`).
+      158  3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
+      159
+      160  **Path Parameters**
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      209  The end line is resolved in the following order of priority:
+      210
+      211  1. The `end` extension field recorded in the ctags tags file.
+      212 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, or `.hs`).
+      212 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, or `.mli`).
+      213  3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
+      214
+      215  **Path Parameters**
+
+⏺ Bash(go mod tidy 2>&1 && go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.672s
+
+⏺ 全テストがパスしました。変更の概要です。
+
+  ---
+  treesitter.go
+  - github.com/tree-sitter/tree-sitter-ocaml/bindings/go をインポート
+  - isMLFile() / isMLIFile() — .ml と .mli を区別して判定
+  - ocamlMLDefinitionTypes: .ml 用（value_definition, type_definition, module_definition, module_type_definition, class_definition）
+  - ocamlMLIDefinitionTypes: .mli 用（value_specification, type_definition, module_type_definition）— .ml と .mli は別パーサーかつノードタイプが異なるため分離
+  - resolveEndWithTreeSitterOCaml() — .ml 用（LanguageOCaml()）
+  - resolveEndWithTreeSitterOCamlInterface() — .mli 用（LanguageOCamlInterface()）
+
+  main.go
+  - case isMLFile(tag.Path) / case isMLIFile(tag.Path) を追加
+
+  treesitter_test.go
+  - mlSample / mliSample 変数
+  - .ml ユニットテスト 8 本（多行関数/単行関数/バリアント型/レコード型/モジュール型/モジュール/クラス/空行エラー）
+  - .mli ユニットテスト 4 本（val/レコード型/モジュール型/空行エラー）
+  - isMLFile / isMLIFile テーブルテスト
+  - HTTP ハンドラ統合テスト 5 本（context=ocaml で greet/point/Circle/counter/color を検証。greet と point は .ml・.mli 両方のスニペットを確認）
+
+  テストデータ
+  - testdata/ocaml/sample.ml（関数・型・モジュール・クラスを含む 25 行）
+  - testdata/ocaml/sample.mli（val・型・モジュール型を含む 14 行）
+  - testdata/ocaml/tags（両ファイルのエントリを end フィールドなしで収録、ASCIIソート済み）
+
+✻ Cogitated for 5m 22s
+```
