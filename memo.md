@@ -3558,3 +3558,138 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ✻ Crunched for 2m 27s
 ```
+
+```
+❯ デフォルトのポート番号を8999に変えてください
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      357  }
+      358
+      359  func main() {
+      360 -  addr := flag.String("addr", ":8080", "listen address")
+      360 +  addr := flag.String("addr", ":8999", "listen address")
+      361    flag.Parse()
+      362
+      363    mux := http.NewServeMux()
+
+⏺ README も合わせて更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      10
+      11  | Flag | Default | Description |
+      12  |------|---------|-------------|
+      13 -| `-addr` | `:8080` | TCP address to listen on |
+      13 +| `-addr` | `:8999` | TCP address to listen on |
+      14
+      15  The server resolves tag files relative to its **current working directory**:
+      16
+
+⏺ Bash(go build ./... && go test . 2>&1 | tail -3)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.579s
+
+⏺ デフォルトポートを :8080 から :8999 に変更しました。README の -addr フラグのデフォルト値も更新済みです。
+
+❯ 起動時のコマンドラインオプションで-pもしくは--portでポート番号を指定できるようにして
+
+⏺ Update(main.go)
+  ⎿  Added 8 lines, removed 1 line
+      357  }
+      358
+      359  func main() {
+      360 -  addr := flag.String("addr", ":8999", "listen address")
+      360 +  addr := flag.String("addr", ":8999", "listen address (host:port)")
+      361 +  port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
+      362 +  flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
+      363    flag.Parse()
+      364
+      365 +  listenAddr := *addr
+      366 +  if *port != 0 {
+      367 +    listenAddr = fmt.Sprintf(":%d", *port)
+      368 +  }
+      369 +
+      370    mux := http.NewServeMux()
+      371
+      372    mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+
+⏺ *addr を使っている箇所を listenAddr に変えます。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      498      }
+      499    })
+      500
+      501 -  log.Printf("listening on %s", *addr)
+      502 -  if err := http.ListenAndServe(*addr, accessLog(mux)); err != nil {
+      501 +  log.Printf("listening on %s", listenAddr)
+      502 +  if err := http.ListenAndServe(listenAddr, accessLog(mux)); err != nil {
+      503      log.Fatalf("server error: %v", err)
+      504    }
+      505  }
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... && go test . 2>&1 | tail -3)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.562s
+
+⏺ README も更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 3 lines, removed 1 line
+      10
+      11  | Flag | Default | Description |
+      12  |------|---------|-------------|
+      13 -| `-addr` | `:8999` | TCP address to listen on |
+      13 +| `-addr` | `:8999` | TCP address to listen on (host:port) |
+      14 +| `-port`, `--port` | — | Port number to listen on; overrides `-addr` when set |
+      15 +| `-p` | — | Shorthand for `-port` |
+      16
+      17  The server resolves tag files relative to its **current working directory**:
+      18
+
+⏺ 完了です。動作は以下のとおりです：
+
+  # デフォルト（:8999）
+  ./codesnippetd
+
+  # ポート番号で指定
+  ./codesnippetd -p 9000
+  ./codesnippetd --port 9000
+  ./codesnippetd -port 9000
+
+  # ホスト:ポートで指定（既存オプション）
+  ./codesnippetd -addr 0.0.0.0:9000
+
+  -p/-port/--port が指定された場合は -addr より優先されます。
+
+❯ `-addr`のコマンドラインオプションを、`-l` もしくは `--listen` に変更して
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 1 line
+      357  }
+      358
+      359  func main() {
+      360 -  addr := flag.String("addr", ":8999", "listen address (host:port)")
+      360 +  addr := flag.String("listen", ":8999", "listen address (host:port)")
+      361 +  flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
+      362    port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
+      363    flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
+      364    flag.Parse()
+
+⏺ Bash(go build ./... && go test . 2>&1 | tail -3)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.544s
+
+⏺ Update(README.md)
+  ⎿  Added 2 lines, removed 1 line
+      10
+      11  | Flag | Default | Description |
+      12  |------|---------|-------------|
+      13 -| `-addr` | `:8999` | TCP address to listen on (host:port) |
+      13 +| `-listen`, `--listen` | `:8999` | TCP address to listen on (host:port) |
+      14 +| `-l` | — | Shorthand for `-listen` |
+      15  | `-port`, `--port` | — | Port number to listen on; overrides `-addr` when set |
+      16  | `-p` | — | Shorthand for `-port` |
+      17
+
+⏺ 完了です。-addr を -l/-listen/--listen に変更しました。
+```

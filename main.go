@@ -357,8 +357,16 @@ func lineRangeForTag(tag Tag) (LineRange, error) {
 }
 
 func main() {
-	addr := flag.String("addr", ":8999", "listen address")
+	addr := flag.String("listen", ":8999", "listen address (host:port)")
+	flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
+	port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
+	flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
 	flag.Parse()
+
+	listenAddr := *addr
+	if *port != 0 {
+		listenAddr = fmt.Sprintf(":%d", *port)
+	}
 
 	mux := http.NewServeMux()
 
@@ -491,8 +499,8 @@ func main() {
 		}
 	})
 
-	log.Printf("listening on %s", *addr)
-	if err := http.ListenAndServe(*addr, accessLog(mux)); err != nil {
+	log.Printf("listening on %s", listenAddr)
+	if err := http.ListenAndServe(listenAddr, accessLog(mux)); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
