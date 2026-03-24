@@ -40,3 +40,5 @@ func overloaded() string {
 
 
 var lineonly = 0
+
+var noendVar = "test"

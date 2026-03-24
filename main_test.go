@@ -603,9 +603,9 @@ func TestHandler_ListAllTags_CountMatchesFile(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		// testdata/tags has 8 non-metadata lines
-		if len(tags) != 8 {
-			t.Errorf("expected 8 tags, got %d", len(tags))
+		// testdata/tags has 9 non-metadata lines
+		if len(tags) != 9 {
+			t.Errorf("expected 9 tags, got %d", len(tags))
 		}
 	})
 }
@@ -840,7 +840,7 @@ func TestSnippetForTag_WithPatternAndEndField(t *testing.T) {
 	}
 }
 
-func TestSnippetForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
+func TestSnippetForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
 	src := "line1\nfunc Foo() {\n\treturn\n}\n"
 	path := writeTemp(t, src)
 
@@ -854,12 +854,32 @@ func TestSnippetForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Should go to end of file (4 lines + empty from trailing newline = 5 split parts)
 	if s.Start != 2 {
 		t.Errorf("Start: got %d, want 2", s.Start)
 	}
-	if !strings.Contains(s.Code, "func Foo") {
-		t.Errorf("Code should contain func Foo, got %q", s.Code)
+	// End must be 0 when Extra["end"] is absent and tree-sitter is disabled
+	if s.End != 0 {
+		t.Errorf("End: got %d, want 0", s.End)
+	}
+}
+
+func TestSnippetForTag_WithoutEndField_CodeIsSingleLine(t *testing.T) {
+	src := "line1\nfunc Foo() {\n\treturn\n}\n"
+	path := writeTemp(t, src)
+
+	tag := Tag{
+		Name:  "Foo",
+		Path:  path,
+		Line:  2,
+		Extra: map[string]string{},
+	}
+	s, err := snippetForTag(tag, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Code must contain only the single start line, not the full function body
+	if s.Code != "func Foo() {" {
+		t.Errorf("Code: got %q, want %q", s.Code, "func Foo() {")
 	}
 }
 
@@ -1087,8 +1107,15 @@ func TestSnippetHandler_LineOnlyTag(t *testing.T) {
 		if snippets[0].Start != 42 {
 			t.Errorf("Start: got %d, want 42", snippets[0].Start)
 		}
+		// lineonly tag has no end field: End must be 0 and Code must be a single line
+		if snippets[0].End != 0 {
+			t.Errorf("End: got %d, want 0", snippets[0].End)
+		}
 		if !strings.Contains(snippets[0].Code, "var lineonly") {
 			t.Errorf("Code should contain var lineonly, got %q", snippets[0].Code)
+		}
+		if strings.Contains(snippets[0].Code, "\n") {
+			t.Errorf("Code should be a single line when end is unknown, got %q", snippets[0].Code)
 		}
 	})
 }
@@ -1122,6 +1149,71 @@ func TestSnippetHandler_CodeBoundaries(t *testing.T) {
 		// Must not include helperFunc which starts at line 24
 		if strings.Contains(s.Code, "func helperFunc") {
 			t.Errorf("Code should not extend past end line, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_NoEndField_ReturnsZeroEndAndSingleLine(t *testing.T) {
+	// noendVar tag in testdata/tags has no "end" field.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/noendVar")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.End != 0 {
+			t.Errorf("End: got %d, want 0 when end field is absent", s.End)
+		}
+		if strings.Contains(s.Code, "\n") {
+			t.Errorf("Code should be a single line when end is unknown, got %q", s.Code)
+		}
+		if !strings.Contains(s.Code, "noendVar") {
+			t.Errorf("Code should contain noendVar, got %q", s.Code)
+		}
+	})
+}
+
+func TestLinesHandler_NoEndField_ReturnsZeroEnd(t *testing.T) {
+	// noendVar tag in testdata/tags has no "end" field.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/noendVar")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(ranges))
+		}
+		if ranges[0].End != 0 {
+			t.Errorf("End: got %d, want 0 when end field is absent", ranges[0].End)
 		}
 	})
 }
@@ -1178,7 +1270,7 @@ func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
 	}
 }
 
-func TestLineRangeForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
+func TestLineRangeForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
 	src := "line1\nfunc Foo() {\n\treturn\n}\n"
 	path := writeTemp(t, src)
 
@@ -1195,8 +1287,9 @@ func TestLineRangeForTag_WithoutEndField_DefaultsToEOF(t *testing.T) {
 	if lr.Start != 2 {
 		t.Errorf("Start: got %d, want 2", lr.Start)
 	}
-	if lr.End == 0 {
-		t.Error("End should not be 0 when defaulting to EOF")
+	// End must be 0 when Extra["end"] is absent and tree-sitter is disabled
+	if lr.End != 0 {
+		t.Errorf("End: got %d, want 0", lr.End)
 	}
 }
 

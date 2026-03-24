@@ -338,7 +338,7 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 		}
 	}
 
-	return startLine, len(lines), nil
+	return startLine, 0, nil
 }
 
 // snippetForTag resolves a Snippet from a Tag by reading the source file.
@@ -354,12 +354,17 @@ func snippetForTag(tag Tag, useTreeSitter bool) (Snippet, error) {
 	}
 	lines := strings.Split(string(data), "\n")
 
+	extractEnd := endLine
+	if extractEnd == 0 {
+		extractEnd = startLine
+	}
+
 	return Snippet{
 		Name:  tag.Name,
 		Path:  tag.Path,
 		Start: startLine,
 		End:   endLine,
-		Code:  extractLines(lines, startLine, endLine),
+		Code:  extractLines(lines, startLine, extractEnd),
 	}, nil
 }
 

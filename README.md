@@ -150,8 +150,12 @@ GET /snippets/{name}
 ```
 
 Returns code snippets extracted from the source files for all tags matching the given name.
-The snippet spans from the tag's start line to the end line recorded in the ctags `end` extension field.
-If the `end` field is absent, the snippet extends to the end of the file.
+
+The end line is resolved in the following order of priority:
+
+1. The `end` extension field recorded in the ctags tags file.
+2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs` or `.js`).
+3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
 
 **Path Parameters**
 
@@ -201,7 +205,12 @@ GET /lines/{name}
 ```
 
 Returns the start and end line numbers for all tags matching the given name, without the source code content.
-The end line is taken from the ctags `end` extension field; if absent, it defaults to the total line count of the file.
+
+The end line is resolved in the following order of priority:
+
+1. The `end` extension field recorded in the ctags tags file.
+2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs` or `.js`).
+3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
 
 **Path Parameters**
 
@@ -250,7 +259,7 @@ GET /lines/MyFunc?context=myproject
 | `name` | string | Tag name |
 | `path` | string | Source file path |
 | `start` | number | Start line of the tag (1-based, inclusive) |
-| `end` | number | End line of the tag (1-based, inclusive) |
+| `end` | number | End line of the tag (1-based, inclusive); `0` if the end could not be determined |
 
 ---
 
@@ -261,7 +270,7 @@ GET /lines/MyFunc?context=myproject
 | `name` | string | Tag name |
 | `path` | string | Source file path |
 | `start` | number | Start line of the snippet (1-based, inclusive) |
-| `end` | number | End line of the snippet (1-based, inclusive) |
+| `end` | number | End line of the snippet (1-based, inclusive); `0` if the end could not be determined, in which case `code` contains only the single line at `start` |
 | `code` | string | Extracted source code lines joined with newlines |
 
 ---
