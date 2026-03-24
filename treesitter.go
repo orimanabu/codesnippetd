@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/rust"
 )
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
-// top-level definitions in Rust source files.
+// definitions in Rust source files.
 var rustDefinitionTypes = map[string]bool{
 	"function_item":           true,
 	"function_signature_item": true,
@@ -24,11 +25,23 @@ var rustDefinitionTypes = map[string]bool{
 	"mod_item":                true,
 }
 
-// findDefinitionNodeAtRow returns the outermost definition-type node whose
-// start row matches row (0-indexed). Falls back to any named node if no
-// definition node is found.
-func findDefinitionNodeAtRow(n *sitter.Node, row uint32) *sitter.Node {
-	if n.StartPoint().Row == row && n.IsNamed() && rustDefinitionTypes[n.Type()] {
+// jsDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in JavaScript source files.
+var jsDefinitionTypes = map[string]bool{
+	"function_declaration":           true,
+	"generator_function_declaration": true,
+	"class_declaration":              true,
+	"method_definition":              true,
+	"lexical_declaration":            true,
+	"variable_declaration":           true,
+	"export_statement":               true,
+}
+
+// findDefinitionNodeAtRow returns the outermost node of one of the given
+// definition types whose start row matches row (0-indexed). Falls back to
+// any named node at that row if no definition-type node is found.
+func findDefinitionNodeAtRow(n *sitter.Node, row uint32, definitionTypes map[string]bool) *sitter.Node {
+	if n.StartPoint().Row == row && n.IsNamed() && definitionTypes[n.Type()] {
 		return n
 	}
 	var fallback *sitter.Node
@@ -40,7 +53,7 @@ func findDefinitionNodeAtRow(n *sitter.Node, row uint32) *sitter.Node {
 		if child.EndPoint().Row < row {
 			continue
 		}
-		if result := findDefinitionNodeAtRow(child, row); result != nil {
+		if result := findDefinitionNodeAtRow(child, row, definitionTypes); result != nil {
 			return result
 		}
 		if child.StartPoint().Row == row && child.IsNamed() && fallback == nil {
@@ -50,11 +63,11 @@ func findDefinitionNodeAtRow(n *sitter.Node, row uint32) *sitter.Node {
 	return fallback
 }
 
-// resolveEndWithTreeSitterRust parses a Rust source file and returns the
-// 1-based end line number of the definition that starts at startLine (1-based).
-func resolveEndWithTreeSitterRust(content []byte, startLine int) (int, error) {
+// resolveEndWithTreeSitter parses content using lang and returns the 1-based
+// end line number of the definition that starts at startLine (1-based).
+func resolveEndWithTreeSitter(lang *sitter.Language, definitionTypes map[string]bool, content []byte, startLine int) (int, error) {
 	parser := sitter.NewParser()
-	parser.SetLanguage(rust.GetLanguage())
+	parser.SetLanguage(lang)
 
 	tree, err := parser.ParseCtx(context.Background(), nil, content)
 	if err != nil {
@@ -63,14 +76,31 @@ func resolveEndWithTreeSitterRust(content []byte, startLine int) (int, error) {
 	defer tree.Close()
 
 	targetRow := uint32(startLine - 1) // tree-sitter uses 0-based rows
-	node := findDefinitionNodeAtRow(tree.RootNode(), targetRow)
+	node := findDefinitionNodeAtRow(tree.RootNode(), targetRow, definitionTypes)
 	if node == nil {
 		return 0, fmt.Errorf("no definition found at line %d", startLine)
 	}
 	return int(node.EndPoint().Row) + 1, nil // convert back to 1-based
 }
 
+// resolveEndWithTreeSitterRust returns the 1-based end line of the Rust
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterRust(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(rust.GetLanguage(), rustDefinitionTypes, content, startLine)
+}
+
+// resolveEndWithTreeSitterJS returns the 1-based end line of the JavaScript
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterJS(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(javascript.GetLanguage(), jsDefinitionTypes, content, startLine)
+}
+
 // isRustFile reports whether path is a Rust source file.
 func isRustFile(path string) bool {
 	return filepath.Ext(path) == ".rs"
+}
+
+// isJSFile reports whether path is a JavaScript source file.
+func isJSFile(path string) bool {
+	return filepath.Ext(path) == ".js"
 }

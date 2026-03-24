@@ -20,7 +20,7 @@ codesnippetd [-addr <listen-address>]
 | `-l` | — | Shorthand for `-listen` |
 | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
 | `-p` | — | Shorthand for `-port` |
-| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (currently supports Rust) |
+| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs` and JavaScript `.js`) |
 
 The server resolves tag files relative to its **current working directory**:
 

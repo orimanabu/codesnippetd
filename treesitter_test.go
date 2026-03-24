@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+// sample JavaScript source used across unit tests.
+var jsSample = []byte(`function greet(name) {
+  return "Hello, " + name;
+}
+
+const add = (a, b) => {
+  return a + b;
+};
+
+class Point {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  distance() {
+    return Math.sqrt(this.x ** 2 + this.y ** 2);
+  }
+}
+`)
+
 // sample Rust source used across unit tests.
 var rustSample = []byte(`fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
@@ -94,7 +114,72 @@ func TestResolveEndWithTreeSitterRust_LineNotFound(t *testing.T) {
 	}
 }
 
-// ---- isRustFile tests ----
+// ---- resolveEndWithTreeSitterJS tests ----
+
+func TestResolveEndWithTreeSitterJS_FunctionDeclaration(t *testing.T) {
+	// function greet starts at line 1, ends at line 3
+	end, err := resolveEndWithTreeSitterJS(jsSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 3 {
+		t.Errorf("end: got %d, want 3", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJS_ArrowFunction(t *testing.T) {
+	// const add = (a, b) => { ... } starts at line 5, ends at line 7
+	end, err := resolveEndWithTreeSitterJS(jsSample, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 7 {
+		t.Errorf("end: got %d, want 7", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJS_Class(t *testing.T) {
+	// class Point starts at line 9, ends at line 17
+	end, err := resolveEndWithTreeSitterJS(jsSample, 9)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 17 {
+		t.Errorf("end: got %d, want 17", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJS_Method(t *testing.T) {
+	// constructor starts at line 10, ends at line 13
+	end, err := resolveEndWithTreeSitterJS(jsSample, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 13 {
+		t.Errorf("end: got %d, want 13", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJS_SecondMethod(t *testing.T) {
+	// distance() starts at line 14, ends at line 16
+	end, err := resolveEndWithTreeSitterJS(jsSample, 14)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 16 {
+		t.Errorf("end: got %d, want 16", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJS_LineNotFound(t *testing.T) {
+	// line 4 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterJS(jsSample, 4)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
+// ---- isRustFile / isJSFile tests ----
 
 func TestIsRustFile(t *testing.T) {
 	cases := []struct {
@@ -104,13 +189,32 @@ func TestIsRustFile(t *testing.T) {
 		{"main.rs", true},
 		{"src/lib.rs", true},
 		{"main.go", false},
-		{"sample.py", false},
+		{"sample.js", false},
 		{"README.md", false},
 		{"noextension", false},
 	}
 	for _, c := range cases {
 		if got := isRustFile(c.path); got != c.want {
 			t.Errorf("isRustFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsJSFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"app.js", true},
+		{"src/index.js", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"app.ts", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isJSFile(c.path); got != c.want {
+			t.Errorf("isJSFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -212,6 +316,116 @@ func TestSnippetHandler_RustFile_Method(t *testing.T) {
 		}
 		if snippets[0].Start != 15 || snippets[0].End != 17 {
 			t.Errorf("Start/End: got %d/%d, want 15/17", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for JavaScript files ----
+
+func TestSnippetHandler_JSFile_FunctionDeclaration(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=js")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 3 {
+			t.Errorf("Start/End: got %d/%d, want 1/3", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "function greet") {
+			t.Errorf("Code should contain function greet, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_JSFile_ArrowFunction(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=js")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 5 || snippets[0].End != 7 {
+			t.Errorf("Start/End: got %d/%d, want 5/7", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_JSFile_Class(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Point?context=js")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 9 || snippets[0].End != 17 {
+			t.Errorf("Start/End: got %d/%d, want 9/17", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_JSFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/distance?context=js")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 14 || ranges[0].End != 16 {
+			t.Errorf("Start/End: got %d/%d, want 14/16", ranges[0].Start, ranges[0].End)
 		}
 	})
 }

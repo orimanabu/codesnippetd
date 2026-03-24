@@ -324,9 +324,17 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 		data = []byte(strings.Join(lines, "\n"))
 	}
 
-	if useTreeSitter && isRustFile(tag.Path) {
-		if end, tsErr := resolveEndWithTreeSitterRust(data, startLine); tsErr == nil {
-			return startLine, end, nil
+	if useTreeSitter {
+		var tsEnd int
+		var tsErr error
+		switch {
+		case isRustFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, startLine)
+		case isJSFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterJS(data, startLine)
+		}
+		if tsErr == nil && tsEnd > 0 {
+			return startLine, tsEnd, nil
 		}
 	}
 
