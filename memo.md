@@ -8469,3 +8469,280 @@ okcurl/src/main/kotlin/okhttp3/curl/internal/-MainCommon.kt: no such file or dir
 ⏺ $(wildcard *.go) でパッケージ直下の .go ファイル（main.go、treesitter.go）を列挙し、go.mod と go.sum
   も依存に加えました。これにより、これらのファイルのいずれかがバイナリより新しい場合のみ再ビルドされます。
 ```
+
+```
+❯ accessLog()でログを出力していますが、このログに「Tree Sitterパーサにフォールバックしたかどうか」を記録できますか
+
+⏺ 現在のコードフローを確認してから設計します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ 設計方針:
+
+  context.Context の値として可変フラグ *requestMeta を格納します。
+
+  1. accessLog で requestMeta を生成 → リクエストコンテキストに注入 → ハンドラ実行後にフラグを読んでログに記録
+  2. resolveStartEnd に ctx context.Context を追加し、Tree Sitter が実際に end line を解決したときにフラグを立てる
+  3. snippetForTag・lineRangeForTag・ハンドラでコンテキストを繋ぐ
+
+⏺ Update(main.go)
+  ⎿  Added 1 line
+      1  package main
+      2
+      3  import (
+      4 +  "context"
+      5    "encoding/json"
+      6    "errors"
+      7    "flag"
+
+⏺ Update(main.go)
+  ⎿  Added 24 lines, removed 1 line
+      56    return json.Marshal(m)
+      57  }
+      58
+      59 +// requestMetaKey is the context key for requestMeta values.
+      60 +type requestMetaKey struct{}
+      61 +
+      62 +// requestMeta carries per-request metadata that handlers can annotate and
+      63 +// the access log middleware can read after the handler returns.
+      64 +type requestMeta struct {
+      65 +  usedTreeSitter bool
+      66 +}
+      67 +
+      68 +// markTreeSitterUsed records that tree-sitter resolved an end line for this request.
+      69 +func markTreeSitterUsed(ctx context.Context) {
+      70 +  if m, ok := ctx.Value(requestMetaKey{}).(*requestMeta); ok {
+      71 +    m.usedTreeSitter = true
+      72 +  }
+      73 +}
+      74 +
+      75  // responseRecorder wraps http.ResponseWriter to capture the written status code.
+      76  type responseRecorder struct {
+      77    http.ResponseWriter
+     ...
+       84  }
+       85
+       86  // accessLog is middleware that logs each request's method, path, status code, and duration.
+       87 +// It also logs whether tree-sitter was used to resolve an end line.
+       88  func accessLog(next http.Handler) http.Handler {
+       89    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+       90      start := time.Now()
+       91 +    meta := &requestMeta{}
+       92 +    r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
+       93      rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+       94      next.ServeHTTP(rec, r)
+       76 -    log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+       95 +    tsFlag := ""
+       96 +    if meta.usedTreeSitter {
+       97 +      tsFlag = " tree-sitter=true"
+       98 +    }
+       99 +    log.Printf("%s %s %d %s%s", r.Method, r.URL.Path, rec.status, time.Since(start), tsFlag)
+      100    })
+      101  }
+      102
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ 次に resolveStartEnd にコンテキストを追加し、Tree Sitter が解決した時点でフラグを立てます。
+
+⏺ Update(main.go)
+  ⎿  Added 3 lines, removed 1 line
+      319  // If the "end" extension field is absent and useTreeSitter is true and the file
+      320  // is a supported language, tree-sitter is used to determine the end line.
+      321  // If neither source provides an end line, endLine is returned as 0.
+      322 -func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+      322 +// When tree-sitter successfully resolves the end line, markTreeSitterUsed is
+      323 +// called on ctx so that the access log middleware can record the fact.
+      324 +func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+      325    filePath := resolveFilePath(contextDir, tag.Path)
+      326    needFile := tag.Line == 0 && tag.Pattern != ""
+      327
+
+⏺ Update(main.go)
+  ⎿  Added 1 line
+      384        tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, startLine)
+      385      }
+      386      if tsErr == nil && tsEnd > 0 {
+      387 +      markTreeSitterUsed(ctx)
+      388        return startLine, tsEnd, nil
+      389      }
+      390    }
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ snippetForTag と lineRangeForTag にもコンテキストを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      394
+      395  // snippetForTag resolves a Snippet from a Tag by reading the source file.
+      396  // contextDir is the directory containing the tags file.
+      397 -func snippetForTag(tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
+      398 -  startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
+      397 +func snippetForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
+      398 +  startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
+      399    if err != nil {
+      400      return Snippet{}, err
+      401    }
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      424  // lineRangeForTag resolves the start and end line numbers for a Tag without reading
+      425  // the full file content (the file is read only when pattern matching is needed).
+      426  // contextDir is the directory containing the tags file.
+      427 -func lineRangeForTag(tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
+      428 -  startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
+      427 +func lineRangeForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
+      428 +  startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
+      429    if err != nil {
+      430      return LineRange{}, err
+      431    }
+  ⎿  Found 9 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ ハンドラ側の呼び出し箇所を修正します。
+
+⏺ Read 1 file (ctrl+o to expand)
+  ⎿  Found 7 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      532
+      533      var snippets []Snippet
+      534      for _, tag := range results {
+      535 -      s, err := snippetForTag(tag, contextDir, *useTreeSitter)
+      535 +      s, err := snippetForTag(r.Context(), tag, contextDir, *useTreeSitter)
+      536        if err != nil {
+      537          http.Error(w, err.Error(), http.StatusInternalServerError)
+      538          return
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      569
+      570      var ranges []LineRange
+      571      for _, tag := range results {
+      572 -      lr, err := lineRangeForTag(tag, contextDir, *useTreeSitter)
+      572 +      lr, err := lineRangeForTag(r.Context(), tag, contextDir, *useTreeSitter)
+      573        if err != nil {
+      574          http.Error(w, err.Error(), http.StatusInternalServerError)
+      575          return
+
+⏺ 次にテスト側を修正します。
+
+⏺ Bash(sed -i '' \
+        's/snippetForTag(tag, "\.", false)/snippetForTag(context.Background(), tag, ".", false)/g;…)
+  ⎿  (No output)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ newHandler 内の呼び出し（行 256・289）にも r.Context() を渡します。
+
+⏺ Update(main_test.go)
+  ⎿  Error editing file
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      253
+      254      var snippets []Snippet
+      255      for _, tag := range results {
+      256 -      s, err := snippetForTag(tag, contextDir, useTreeSitter)
+      256 +      s, err := snippetForTag(r.Context(), tag, contextDir, useTreeSitter)
+      257        if err != nil {
+      258          http.Error(w, err.Error(), http.StatusInternalServerError)
+      259          return
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      286
+      287      var ranges []LineRange
+      288      for _, tag := range results {
+      289 -      lr, err := lineRangeForTag(tag, contextDir, useTreeSitter)
+      289 +      lr, err := lineRangeForTag(r.Context(), tag, contextDir, useTreeSitter)
+      290        if err != nil {
+      291          http.Error(w, err.Error(), http.StatusInternalServerError)
+      292          return
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ main_test.go に "context" パッケージの import を追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      2
+      3  import (
+      4    "bytes"
+      5 +  "context"
+      6    "encoding/json"
+      7    "errors"
+      8    "fmt"
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+  ⎿  Found 12 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Bash(go test ./... 2>&1 | tail -5)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.859s
+
+⏺ 全テストパスです。実際のログ出力例を確認します。
+
+⏺ Bash(go test -run "TestSnippetHandler_RustFile_UsesTreeSitter|TestSnippetHandler_ReturnsJSON" -v 2>&1 | grep "GET /snippets")
+  ⎿  2026/03/25 14:17:55 GET /snippets/NewMyStruct 200 5.7665ms
+     2026/03/25 14:17:55 GET /snippets/greet 200 6.035ms tree-sitter=true
+
+⏺ Tree Sitter が使われたリクエストには tree-sitter=true が付き、使われなかったリクエストには何も付かないことが確認できます。
+
+  ---
+  実装の概要:
+
+  ┌─────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │          追加した要素           │                                                   役割                                                   │
+  ├─────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ requestMeta struct              │ usedTreeSitter bool フラグを持つ、リクエスト単位の可変メタデータ                                         │
+  ├─────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ markTreeSitterUsed(ctx)         │ context から *requestMeta を取り出してフラグを true に設定                                               │
+  ├─────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ accessLog の変更                │ requestMeta を生成してコンテキストに注入し、ハンドラ終了後にフラグを読んでログに tree-sitter=true を付与 │
+  ├─────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ resolveStartEnd の変更          │ ctx context.Context を受け取り、Tree Sitter が end line を解決したときに markTreeSitterUsed(ctx) を呼ぶ  │
+  ├─────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ snippetForTag / lineRangeForTag │ ctx を受け取って resolveStartEnd に伝達                                                                  │
+  └─────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+✻ Crunched for 2m 34s
+
+❯ 「Tree Sitterが使われたときだけtree-sitter=trueをつける」のではなく、「Tree Sitterを使わないときは `parser=ctags` を、使われたときは`parser=tree-sitter`
+をログに付与する」に変えてください
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 3 lines, removed 3 lines
+       92      r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
+       93      rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+       94      next.ServeHTTP(rec, r)
+       95 -    tsFlag := ""
+       95 +    parser := "ctags"
+       96      if meta.usedTreeSitter {
+       97 -      tsFlag = " tree-sitter=true"
+       97 +      parser = "tree-sitter"
+       98      }
+       99 -    log.Printf("%s %s %d %s%s", r.Method, r.URL.Path, rec.status, time.Since(start), tsFlag)
+       99 +    log.Printf("%s %s %d %s parser=%s", r.Method, r.URL.Path, rec.status, time.Since(start), parser)
+      100    })
+      101  }
+      102
+
+⏺ Bash(go test -run "TestSnippetHandler_RustFile_UsesTreeSitter|TestSnippetHandler_ReturnsJSON" -v 2>&1 | grep "GET /snippets")
+  ⎿  2026/03/25 14:22:05 GET /snippets/NewMyStruct 200 5.779208ms parser=ctags
+     2026/03/25 14:22:05 GET /snippets/greet 200 5.206833ms parser=tree-sitter
+
+⏺ Bash(go test ./... 2>&1 | tail -3)
+  ⎿  ok         github.com/orimanabu/codesnippetd       4.972s
+  ⎿  (timeout 1m)
+
+⏺ 常に parser=ctags または parser=tree-sitter がログに付くようになりました。
+
+✻ Baked for 32s
+```

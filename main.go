@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -55,6 +56,22 @@ func (t Tag) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// requestMetaKey is the context key for requestMeta values.
+type requestMetaKey struct{}
+
+// requestMeta carries per-request metadata that handlers can annotate and
+// the access log middleware can read after the handler returns.
+type requestMeta struct {
+	usedTreeSitter bool
+}
+
+// markTreeSitterUsed records that tree-sitter resolved an end line for this request.
+func markTreeSitterUsed(ctx context.Context) {
+	if m, ok := ctx.Value(requestMetaKey{}).(*requestMeta); ok {
+		m.usedTreeSitter = true
+	}
+}
+
 // responseRecorder wraps http.ResponseWriter to capture the written status code.
 type responseRecorder struct {
 	http.ResponseWriter
@@ -67,12 +84,19 @@ func (r *responseRecorder) WriteHeader(status int) {
 }
 
 // accessLog is middleware that logs each request's method, path, status code, and duration.
+// It also logs whether tree-sitter was used to resolve an end line.
 func accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		meta := &requestMeta{}
+		r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
 		rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+		parser := "ctags"
+		if meta.usedTreeSitter {
+			parser = "tree-sitter"
+		}
+		log.Printf("%s %s %d %s parser=%s", r.Method, r.URL.Path, rec.status, time.Since(start), parser)
 	})
 }
 
@@ -295,7 +319,9 @@ func resolveFilePath(contextDir, tagPath string) string {
 // If the "end" extension field is absent and useTreeSitter is true and the file
 // is a supported language, tree-sitter is used to determine the end line.
 // If neither source provides an end line, endLine is returned as 0.
-func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+// When tree-sitter successfully resolves the end line, markTreeSitterUsed is
+// called on ctx so that the access log middleware can record the fact.
+func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
 	filePath := resolveFilePath(contextDir, tag.Path)
 	needFile := tag.Line == 0 && tag.Pattern != ""
 
@@ -358,6 +384,7 @@ func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine,
 			tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, startLine)
 		}
 		if tsErr == nil && tsEnd > 0 {
+			markTreeSitterUsed(ctx)
 			return startLine, tsEnd, nil
 		}
 	}
@@ -367,8 +394,8 @@ func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine,
 
 // snippetForTag resolves a Snippet from a Tag by reading the source file.
 // contextDir is the directory containing the tags file.
-func snippetForTag(tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
-	startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
+func snippetForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
+	startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
 	if err != nil {
 		return Snippet{}, err
 	}
@@ -397,8 +424,8 @@ func snippetForTag(tag Tag, contextDir string, useTreeSitter bool) (Snippet, err
 // lineRangeForTag resolves the start and end line numbers for a Tag without reading
 // the full file content (the file is read only when pattern matching is needed).
 // contextDir is the directory containing the tags file.
-func lineRangeForTag(tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
-	startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
+func lineRangeForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
+	startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
 	if err != nil {
 		return LineRange{}, err
 	}
@@ -505,7 +532,7 @@ func main() {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(tag, contextDir, *useTreeSitter)
+			s, err := snippetForTag(r.Context(), tag, contextDir, *useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -542,7 +569,7 @@ func main() {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(tag, contextDir, *useTreeSitter)
+			lr, err := lineRangeForTag(r.Context(), tag, contextDir, *useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

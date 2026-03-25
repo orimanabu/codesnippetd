@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -253,7 +254,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(tag, contextDir, useTreeSitter)
+			s, err := snippetForTag(r.Context(), tag, contextDir, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -286,7 +287,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(tag, contextDir, useTreeSitter)
+			lr, err := lineRangeForTag(r.Context(), tag, contextDir, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -801,7 +802,7 @@ func TestSnippetForTag_WithLineAndEndField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	s, err := snippetForTag(tag, ".", false)
+	s, err := snippetForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -830,7 +831,7 @@ func TestSnippetForTag_WithPatternAndEndField(t *testing.T) {
 		Pattern: "^func Hello() {$",
 		Extra:   map[string]string{"end": "4"},
 	}
-	s, err := snippetForTag(tag, ".", false)
+	s, err := snippetForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -852,7 +853,7 @@ func TestSnippetForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	s, err := snippetForTag(tag, ".", false)
+	s, err := snippetForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -875,7 +876,7 @@ func TestSnippetForTag_WithoutEndField_CodeIsSingleLine(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	s, err := snippetForTag(tag, ".", false)
+	s, err := snippetForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -892,7 +893,7 @@ func TestSnippetForTag_FileNotFound(t *testing.T) {
 		Line:  1,
 		Extra: map[string]string{},
 	}
-	_, err := snippetForTag(tag, ".", false)
+	_, err := snippetForTag(context.Background(), tag, ".", false)
 	if err == nil {
 		t.Fatal("expected error for missing source file")
 	}
@@ -909,7 +910,7 @@ func TestSnippetForTag_PatternNotFoundInFile(t *testing.T) {
 		Pattern: "func Foo",
 		Extra:   map[string]string{},
 	}
-	_, err := snippetForTag(tag, ".", false)
+	_, err := snippetForTag(context.Background(), tag, ".", false)
 	if err == nil {
 		t.Fatal("expected error when pattern not found")
 	}
@@ -1232,7 +1233,7 @@ func TestLineRangeForTag_WithLineAndEndField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	lr, err := lineRangeForTag(tag, ".", false)
+	lr, err := lineRangeForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1260,7 +1261,7 @@ func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
 		Pattern: "^func Hello() {$",
 		Extra:   map[string]string{"end": "4"},
 	}
-	lr, err := lineRangeForTag(tag, ".", false)
+	lr, err := lineRangeForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1282,7 +1283,7 @@ func TestLineRangeForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	lr, err := lineRangeForTag(tag, ".", false)
+	lr, err := lineRangeForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1302,7 +1303,7 @@ func TestLineRangeForTag_FileNotFound(t *testing.T) {
 		Pattern: "^func Foo() {$",
 		Extra:   map[string]string{},
 	}
-	_, err := lineRangeForTag(tag, ".", false)
+	_, err := lineRangeForTag(context.Background(), tag, ".", false)
 	if err == nil {
 		t.Fatal("expected error for missing source file")
 	}
@@ -1318,7 +1319,7 @@ func TestLineRangeForTag_NoCodeField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	lr, err := lineRangeForTag(tag, ".", false)
+	lr, err := lineRangeForTag(context.Background(), tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
