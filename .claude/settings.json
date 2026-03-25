@@ -4,6 +4,8 @@
     "allow": [
       "Bash(git status)",
       "Bash(git diff)",
+      "Bash(go build *)",
+      "Bash(go test *)"
     ],
     "deny": [
       "Read(./memo.md)",
