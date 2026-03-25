@@ -5,7 +5,9 @@ GO := go
 
 all: $(BINARY)
 
-$(BINARY):
+SRCS := $(wildcard *.go)
+
+$(BINARY): $(SRCS) go.mod go.sum
 	$(GO) build -o $(BINARY) .
 
 test:
