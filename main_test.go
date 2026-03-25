@@ -235,6 +235,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
 		tagsPath := tagsFileForContext(context)
+		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
@@ -252,7 +253,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(tag, useTreeSitter)
+			s, err := snippetForTag(tag, contextDir, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -267,6 +268,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
 		tagsPath := tagsFileForContext(context)
+		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
@@ -284,7 +286,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(tag, useTreeSitter)
+			lr, err := lineRangeForTag(tag, contextDir, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -799,7 +801,7 @@ func TestSnippetForTag_WithLineAndEndField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	s, err := snippetForTag(tag, false)
+	s, err := snippetForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +830,7 @@ func TestSnippetForTag_WithPatternAndEndField(t *testing.T) {
 		Pattern: "^func Hello() {$",
 		Extra:   map[string]string{"end": "4"},
 	}
-	s, err := snippetForTag(tag, false)
+	s, err := snippetForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -850,7 +852,7 @@ func TestSnippetForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	s, err := snippetForTag(tag, false)
+	s, err := snippetForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -873,7 +875,7 @@ func TestSnippetForTag_WithoutEndField_CodeIsSingleLine(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	s, err := snippetForTag(tag, false)
+	s, err := snippetForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -890,7 +892,7 @@ func TestSnippetForTag_FileNotFound(t *testing.T) {
 		Line:  1,
 		Extra: map[string]string{},
 	}
-	_, err := snippetForTag(tag, false)
+	_, err := snippetForTag(tag, ".", false)
 	if err == nil {
 		t.Fatal("expected error for missing source file")
 	}
@@ -907,7 +909,7 @@ func TestSnippetForTag_PatternNotFoundInFile(t *testing.T) {
 		Pattern: "func Foo",
 		Extra:   map[string]string{},
 	}
-	_, err := snippetForTag(tag, false)
+	_, err := snippetForTag(tag, ".", false)
 	if err == nil {
 		t.Fatal("expected error when pattern not found")
 	}
@@ -1230,7 +1232,7 @@ func TestLineRangeForTag_WithLineAndEndField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	lr, err := lineRangeForTag(tag, false)
+	lr, err := lineRangeForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1258,7 +1260,7 @@ func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
 		Pattern: "^func Hello() {$",
 		Extra:   map[string]string{"end": "4"},
 	}
-	lr, err := lineRangeForTag(tag, false)
+	lr, err := lineRangeForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1280,7 +1282,7 @@ func TestLineRangeForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
 		Line:  2,
 		Extra: map[string]string{},
 	}
-	lr, err := lineRangeForTag(tag, false)
+	lr, err := lineRangeForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1300,7 +1302,7 @@ func TestLineRangeForTag_FileNotFound(t *testing.T) {
 		Pattern: "^func Foo() {$",
 		Extra:   map[string]string{},
 	}
-	_, err := lineRangeForTag(tag, false)
+	_, err := lineRangeForTag(tag, ".", false)
 	if err == nil {
 		t.Fatal("expected error for missing source file")
 	}
@@ -1316,7 +1318,7 @@ func TestLineRangeForTag_NoCodeField(t *testing.T) {
 		Line:  3,
 		Extra: map[string]string{"end": "5"},
 	}
-	lr, err := lineRangeForTag(tag, false)
+	lr, err := lineRangeForTag(tag, ".", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1499,6 +1501,103 @@ func TestLinesHandler_ContextQueryParam(t *testing.T) {
 		}
 		if ranges[0].Start != 3 || ranges[0].End != 4 {
 			t.Errorf("Start/End: got %d/%d, want 3/4", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- context= query parameter edge-case tests ----
+
+// TestTagsFileForContext_Slashes verifies that context values with slashes are
+// joined correctly so there is no double-separator in the resulting path.
+func TestTagsFileForContext_Slashes(t *testing.T) {
+	got := tagsFileForContext("a/b")
+	want := filepath.Join(".", "a", "b", "tags")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestHandler_ContextNotFound checks that all four endpoints return 404 when
+// the context directory (and therefore the tags file) does not exist.
+func TestHandler_ContextNotFound(t *testing.T) {
+	endpoints := []string{
+		"/tags",
+		"/tags/SomeFunc",
+		"/snippets/SomeFunc",
+		"/lines/SomeFunc",
+	}
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		for _, ep := range endpoints {
+			url := srv.URL + ep + "?context=nonexistent"
+			resp, err := http.Get(url)
+			if err != nil {
+				t.Fatalf("%s: %v", ep, err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusNotFound {
+				t.Errorf("%s: status got %d, want %d", ep, resp.StatusCode, http.StatusNotFound)
+			}
+		}
+	})
+}
+
+// TestHandler_ContextEmpty verifies that omitting context= (empty string)
+// falls back to the default tags file in the current directory.
+func TestHandler_ContextEmpty(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		// /tags without context= should return tags from ./tags (the default).
+		resp, err := http.Get(srv.URL + "/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		var tags []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(tags) == 0 {
+			t.Error("expected at least one tag from default tags file")
+		}
+	})
+}
+
+// TestHandler_ContextIsolation verifies that two different context values
+// return results from their respective tags files and do not bleed into
+// each other. SubFunc only exists in the "sub" context, not in the default.
+func TestHandler_ContextIsolation(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		// SubFunc should be found with ?context=sub
+		resp, err := http.Get(srv.URL + "/tags/SubFunc?context=sub")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("context=sub: status got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		// SubFunc should NOT be found without context= (default tags file).
+		// The server returns 404 when the tag does not exist.
+		resp2, err := http.Get(srv.URL + "/tags/SubFunc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != http.StatusNotFound {
+			t.Errorf("SubFunc should not exist in default context: status got %d, want %d", resp2.StatusCode, http.StatusNotFound)
 		}
 	})
 }

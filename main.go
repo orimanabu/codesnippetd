@@ -278,19 +278,32 @@ func extractLines(lines []string, start, end int) string {
 	return strings.Join(lines[start-1:end], "\n")
 }
 
+// resolveFilePath returns the path to the source file for a tag.
+// If tagPath is already absolute it is returned unchanged; otherwise contextDir
+// (the directory that contains the tags file) is prepended.
+func resolveFilePath(contextDir, tagPath string) string {
+	if filepath.IsAbs(tagPath) {
+		return tagPath
+	}
+	return filepath.Join(contextDir, tagPath)
+}
+
 // resolveStartEnd returns the start and end line numbers for a Tag.
+// contextDir is the directory containing the tags file; it is prepended to
+// tag.Path (which is relative to the tags file) when reading source files.
 // The source file is read only when pattern matching is needed (tag.Line == 0).
 // If the "end" extension field is absent and useTreeSitter is true and the file
-// is a Rust source file, tree-sitter is used to determine the end line.
-// Otherwise endLine defaults to the total line count of the file.
-func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err error) {
+// is a supported language, tree-sitter is used to determine the end line.
+// If neither source provides an end line, endLine is returned as 0.
+func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+	filePath := resolveFilePath(contextDir, tag.Path)
 	needFile := tag.Line == 0 && tag.Pattern != ""
 
 	var lines []string
 	if needFile {
-		data, readErr := os.ReadFile(tag.Path)
+		data, readErr := os.ReadFile(filePath)
 		if readErr != nil {
-			return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
 		}
 		lines = strings.Split(string(data), "\n")
 	}
@@ -300,7 +313,7 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 		startLine = findPatternLine(lines, tag.Pattern)
 	}
 	if startLine <= 0 {
-		return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
+		return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
 	}
 
 	if endStr, ok := tag.Extra["end"]; ok {
@@ -310,14 +323,13 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 		}
 	}
 
-	// end field absent: read the file (if not already read) and try tree-sitter for
-	// Rust files, otherwise fall back to EOF.
+	// end field absent: read the file (if not already read) and try tree-sitter.
 	var data []byte
 	if lines == nil {
 		var readErr error
-		data, readErr = os.ReadFile(tag.Path)
+		data, readErr = os.ReadFile(filePath)
 		if readErr != nil {
-			return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
 		}
 		lines = strings.Split(string(data), "\n")
 	} else {
@@ -354,15 +366,17 @@ func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err e
 }
 
 // snippetForTag resolves a Snippet from a Tag by reading the source file.
-func snippetForTag(tag Tag, useTreeSitter bool) (Snippet, error) {
-	startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
+// contextDir is the directory containing the tags file.
+func snippetForTag(tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
+	startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
 	if err != nil {
 		return Snippet{}, err
 	}
 
-	data, err := os.ReadFile(tag.Path)
+	filePath := resolveFilePath(contextDir, tag.Path)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
+		return Snippet{}, fmt.Errorf("reading file %s: %w", filePath, err)
 	}
 	lines := strings.Split(string(data), "\n")
 
@@ -382,8 +396,9 @@ func snippetForTag(tag Tag, useTreeSitter bool) (Snippet, error) {
 
 // lineRangeForTag resolves the start and end line numbers for a Tag without reading
 // the full file content (the file is read only when pattern matching is needed).
-func lineRangeForTag(tag Tag, useTreeSitter bool) (LineRange, error) {
-	startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
+// contextDir is the directory containing the tags file.
+func lineRangeForTag(tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
+	startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
 	if err != nil {
 		return LineRange{}, err
 	}
@@ -471,6 +486,7 @@ func main() {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
 		tagsPath := tagsFileForContext(context)
+		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
@@ -489,7 +505,7 @@ func main() {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(tag, *useTreeSitter)
+			s, err := snippetForTag(tag, contextDir, *useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -507,6 +523,7 @@ func main() {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
 		tagsPath := tagsFileForContext(context)
+		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
@@ -525,7 +542,7 @@ func main() {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(tag, *useTreeSitter)
+			lr, err := lineRangeForTag(tag, contextDir, *useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

@@ -1,12 +1,12 @@
 !_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
 !_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
 !_TAG_PROGRAM_NAME	Universal Ctags	//
-Circle	kt/sample.kt	/^class Circle(private val radius: Double) {$/;"	kind:class	line:9	language:Kotlin
-Direction	kt/sample.kt	/^enum class Direction {$/;"	kind:class	line:26	language:Kotlin
-MathUtils	kt/sample.kt	/^object MathUtils {$/;"	kind:object	line:22	language:Kotlin
-Point	kt/sample.kt	/^data class Point(val x: Double, val y: Double)$/;"	kind:class	line:7	language:Kotlin
-Shape	kt/sample.kt	/^interface Shape {$/;"	kind:interface	line:17	language:Kotlin
-add	kt/sample.kt	/^fun add(x: Int, y: Int): Int = x + y$/;"	kind:function	line:5	language:Kotlin
-area	kt/sample.kt	/^    fun area(): Double {$/;"	kind:function	line:10	language:Kotlin
-greet	kt/sample.kt	/^fun greet(name: String): String {$/;"	kind:function	line:1	language:Kotlin
-perimeter	kt/sample.kt	/^    fun perimeter(): Double = 2 * Math.PI * radius$/;"	kind:function	line:14	language:Kotlin
+Circle	sample.kt	/^class Circle(private val radius: Double) {$/;"	kind:class	line:9	language:Kotlin
+Direction	sample.kt	/^enum class Direction {$/;"	kind:class	line:26	language:Kotlin
+MathUtils	sample.kt	/^object MathUtils {$/;"	kind:object	line:22	language:Kotlin
+Point	sample.kt	/^data class Point(val x: Double, val y: Double)$/;"	kind:class	line:7	language:Kotlin
+Shape	sample.kt	/^interface Shape {$/;"	kind:interface	line:17	language:Kotlin
+add	sample.kt	/^fun add(x: Int, y: Int): Int = x + y$/;"	kind:function	line:5	language:Kotlin
+area	sample.kt	/^    fun area(): Double {$/;"	kind:function	line:10	language:Kotlin
+greet	sample.kt	/^fun greet(name: String): String {$/;"	kind:function	line:1	language:Kotlin
+perimeter	sample.kt	/^    fun perimeter(): Double = 2 * Math.PI * radius$/;"	kind:function	line:14	language:Kotlin

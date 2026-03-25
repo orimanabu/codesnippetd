@@ -1,9 +1,9 @@
 !_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
 !_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
 !_TAG_PROGRAM_NAME	Universal Ctags	//
-Circle	ts/sample.ts	/^class Circle implements Shape {$/;"	kind:class	line:18	language:TypeScript
-Direction	ts/sample.ts	/^enum Direction {$/;"	kind:enum	line:25	language:TypeScript
-Point	ts/sample.ts	/^type Point = {$/;"	kind:type	line:13	language:TypeScript
-Shape	ts/sample.ts	/^interface Shape {$/;"	kind:interface	line:9	language:TypeScript
-add	ts/sample.ts	/^const add = (a: number, b: number): number => {$/;"	kind:constant	line:5	language:TypeScript
-greet	ts/sample.ts	/^function greet(name: string): string {$/;"	kind:function	line:1	language:TypeScript
+Circle	sample.ts	/^class Circle implements Shape {$/;"	kind:class	line:18	language:TypeScript
+Direction	sample.ts	/^enum Direction {$/;"	kind:enum	line:25	language:TypeScript
+Point	sample.ts	/^type Point = {$/;"	kind:type	line:13	language:TypeScript
+Shape	sample.ts	/^interface Shape {$/;"	kind:interface	line:9	language:TypeScript
+add	sample.ts	/^const add = (a: number, b: number): number => {$/;"	kind:constant	line:5	language:TypeScript
+greet	sample.ts	/^function greet(name: string): string {$/;"	kind:function	line:1	language:TypeScript

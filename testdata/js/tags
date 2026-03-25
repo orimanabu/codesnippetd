@@ -1,8 +1,8 @@
 !_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
 !_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
 !_TAG_PROGRAM_NAME	Universal Ctags	//
-Point	js/sample.js	/^class Point {$/;"	kind:class	line:9	language:JavaScript
-add	js/sample.js	/^const add = (a, b) => {$/;"	kind:constant	line:5	language:JavaScript
-constructor	js/sample.js	/^  constructor(x, y) {$/;"	kind:method	line:10	language:JavaScript
-distance	js/sample.js	/^  distance() {$/;"	kind:method	line:14	language:JavaScript
-greet	js/sample.js	/^function greet(name) {$/;"	kind:function	line:1	language:JavaScript
+Point	sample.js	/^class Point {$/;"	kind:class	line:9	language:JavaScript
+add	sample.js	/^const add = (a, b) => {$/;"	kind:constant	line:5	language:JavaScript
+constructor	sample.js	/^  constructor(x, y) {$/;"	kind:method	line:10	language:JavaScript
+distance	sample.js	/^  distance() {$/;"	kind:method	line:14	language:JavaScript
+greet	sample.js	/^function greet(name) {$/;"	kind:function	line:1	language:JavaScript

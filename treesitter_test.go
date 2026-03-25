@@ -1542,7 +1542,7 @@ func TestSnippetHandler_MLFile_FunctionMultiLine(t *testing.T) {
 			byPath[s.Path] = s
 		}
 
-		ml := byPath["ocaml/sample.ml"]
+		ml := byPath["sample.ml"]
 		if ml.Start != 1 || ml.End != 2 {
 			t.Errorf(".ml Start/End: got %d/%d, want 1/2", ml.Start, ml.End)
 		}
@@ -1550,7 +1550,7 @@ func TestSnippetHandler_MLFile_FunctionMultiLine(t *testing.T) {
 			t.Errorf(".ml Code should contain let greet, got %q", ml.Code)
 		}
 
-		mli := byPath["ocaml/sample.mli"]
+		mli := byPath["sample.mli"]
 		if mli.Start != 1 || mli.End != 1 {
 			t.Errorf(".mli Start/End: got %d/%d, want 1/1", mli.Start, mli.End)
 		}
@@ -1587,12 +1587,12 @@ func TestSnippetHandler_MLFile_TypeRecord(t *testing.T) {
 		for _, s := range snippets {
 			byPath[s.Path] = s
 		}
-		if byPath["ocaml/sample.ml"].Start != 8 || byPath["ocaml/sample.ml"].End != 11 {
-			ml := byPath["ocaml/sample.ml"]
+		if byPath["sample.ml"].Start != 8 || byPath["sample.ml"].End != 11 {
+			ml := byPath["sample.ml"]
 			t.Errorf(".ml Start/End: got %d/%d, want 8/11", ml.Start, ml.End)
 		}
-		if byPath["ocaml/sample.mli"].Start != 7 || byPath["ocaml/sample.mli"].End != 10 {
-			mli := byPath["ocaml/sample.mli"]
+		if byPath["sample.mli"].Start != 7 || byPath["sample.mli"].End != 10 {
+			mli := byPath["sample.mli"]
 			t.Errorf(".mli Start/End: got %d/%d, want 7/10", mli.Start, mli.End)
 		}
 	})
