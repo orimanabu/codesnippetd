@@ -8447,3 +8447,25 @@ okcurl/src/main/kotlin/okhttp3/curl/internal/-MainCommon.kt: no such file or dir
 
 ✻ Sautéed for 4m 48s
 ```
+
+```
+❯ Makefileの`${BINARY}`ターゲットに依存関係を書いてください
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Update(Makefile)
+  ⎿  Added 3 lines, removed 1 line
+       5
+       6  all: $(BINARY)
+       7
+       8 -$(BINARY):
+       8 +SRCS := $(wildcard *.go)
+       9 +
+      10 +$(BINARY): $(SRCS) go.mod go.sum
+      11    $(GO) build -o $(BINARY) .
+      12
+      13  test:
+
+⏺ $(wildcard *.go) でパッケージ直下の .go ファイル（main.go、treesitter.go）を列挙し、go.mod と go.sum
+  も依存に加えました。これにより、これらのファイルのいずれかがバイナリより新しい場合のみ再ビルドされます。
+```
