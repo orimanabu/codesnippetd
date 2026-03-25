@@ -299,6 +299,136 @@ func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample Kotlin source used across unit tests.
+// Content must match testdata/kt/sample.kt exactly.
+var ktSample = []byte(`fun greet(name: String): String {
+    return "Hello, $name!"
+}
+
+fun add(x: Int, y: Int): Int = x + y
+
+data class Point(val x: Double, val y: Double)
+
+class Circle(private val radius: Double) {
+    fun area(): Double {
+        return Math.PI * radius * radius
+    }
+
+    fun perimeter(): Double = 2 * Math.PI * radius
+}
+
+interface Shape {
+    fun area(): Double
+    fun perimeter(): Double
+}
+
+object MathUtils {
+    fun square(n: Int): Int = n * n
+}
+
+enum class Direction {
+    UP, DOWN, LEFT, RIGHT
+}
+`)
+
+// ---- resolveEndWithTreeSitterKotlin tests ----
+
+func TestResolveEndWithTreeSitterKotlin_FunctionMultiLine(t *testing.T) {
+	// fun greet starts at line 1, ends at line 3
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 3 {
+		t.Errorf("end: got %d, want 3", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_FunctionExpressionBody(t *testing.T) {
+	// fun add ... = x + y starts at line 5, ends at line 5
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 5 {
+		t.Errorf("end: got %d, want 5", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_DataClass(t *testing.T) {
+	// data class Point starts at line 7, ends at line 7
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 7 {
+		t.Errorf("end: got %d, want 7", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_Class(t *testing.T) {
+	// class Circle starts at line 9, ends at line 15
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 9)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 15 {
+		t.Errorf("end: got %d, want 15", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_Method(t *testing.T) {
+	// fun area inside Circle starts at line 10, ends at line 12
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 12 {
+		t.Errorf("end: got %d, want 12", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_Interface(t *testing.T) {
+	// interface Shape starts at line 17, ends at line 20
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 17)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 20 {
+		t.Errorf("end: got %d, want 20", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_Object(t *testing.T) {
+	// object MathUtils starts at line 22, ends at line 24
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 22)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 24 {
+		t.Errorf("end: got %d, want 24", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_Enum(t *testing.T) {
+	// enum class Direction starts at line 26, ends at line 28
+	end, err := resolveEndWithTreeSitterKotlin(ktSample, 26)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 28 {
+		t.Errorf("end: got %d, want 28", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterKotlin_LineNotFound(t *testing.T) {
+	// line 4 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterKotlin(ktSample, 4)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // sample PHP source used across unit tests.
 // Content must match testdata/php/sample.php exactly.
 var phpSample = []byte(`<?php
@@ -820,6 +950,25 @@ func TestIsHSFile(t *testing.T) {
 	for _, c := range cases {
 		if got := isHSFile(c.path); got != c.want {
 			t.Errorf("isHSFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsKtFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"Main.kt", true},
+		{"src/App.kt", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"app.ts", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isKtFile(c.path); got != c.want {
+			t.Errorf("isKtFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }
@@ -1706,6 +1855,128 @@ func TestLinesHandler_PHPFile_UsesTreeSitter(t *testing.T) {
 		}
 		if ranges[0].Start != 7 || ranges[0].End != 9 {
 			t.Errorf("Start/End: got %d/%d, want 7/9", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for Kotlin files ----
+
+func TestSnippetHandler_KTFile_Function(t *testing.T) {
+	// kt/tags has no "end" field, so tree-sitter must supply it.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=kt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 3 {
+			t.Errorf("Start/End: got %d/%d, want 1/3", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "fun greet") {
+			t.Errorf("Code should contain fun greet, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "fun add") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_KTFile_Class(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Circle?context=kt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 9 || snippets[0].End != 15 {
+			t.Errorf("Start/End: got %d/%d, want 9/15", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_KTFile_Object(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/MathUtils?context=kt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 22 || snippets[0].End != 24 {
+			t.Errorf("Start/End: got %d/%d, want 22/24", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_KTFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/greet?context=kt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 1 || ranges[0].End != 3 {
+			t.Errorf("Start/End: got %d/%d, want 1/3", ranges[0].Start, ranges[0].End)
 		}
 	})
 }

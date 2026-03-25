@@ -7598,3 +7598,513 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
 
 ✻ Worked for 3m 11s
 ```
+
+```
+❯ tree-sitterのサポート言語として、Kotlinを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.kt` のときはtree
+ sitterのKotlin parserを使うようにしてください。テストコードとREADME.mdの更新もお願いします。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ smacker/go-tree-sitter に Kotlin があります。ノードタイプを調査します。
+
+⏺ Bash(cat > /Users/ori/devel/src/github.com/orimanabu/codesnippetd/ktprobe_test.go << 'EOF'
+      package main…)
+  ⎿  depth=0 line= 1-29 type=source_file                         "fun greet(name: String): String {\n    return \"Hell"
+     depth=1 line= 1- 3 type=function_declaration                "fun greet(name: String): String {\n    return \"Hell"
+     depth=2 line= 1- 1 type=simple_identifier                   "greet"
+     … +20 lines (ctrl+o to expand)
+
+⏺ ノードタイプと end 行が確認できました。プローブを削除して実装します。
+
+⏺ Bash(rm /Users/ori/devel/src/github.com/orimanabu/codesnippetd/ktprobe_test.go)
+  ⎿  Done
+
+⏺ treesitter.go に追加します。
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+       7
+       8    sitter "github.com/smacker/go-tree-sitter"
+       9    "github.com/smacker/go-tree-sitter/javascript"
+      10 +  "github.com/smacker/go-tree-sitter/kotlin"
+      11    "github.com/smacker/go-tree-sitter/php"
+      12    "github.com/smacker/go-tree-sitter/rust"
+      13    "github.com/smacker/go-tree-sitter/typescript/typescript"
+
+⏺ Update(treesitter.go)
+  ⎿  Added 20 lines
+      165    return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      166  }
+      167
+      168 +// isKtFile reports whether path is a Kotlin source file.
+      169 +func isKtFile(path string) bool {
+      170 +  return filepath.Ext(path) == ".kt"
+      171 +}
+      172 +
+      173 +// ktDefinitionTypes is the set of tree-sitter node types treated as
+      174 +// definitions in Kotlin source files. Kotlin interfaces and enums are
+      175 +// represented as class_declaration in the tree-sitter grammar.
+      176 +var ktDefinitionTypes = map[string]bool{
+      177 +  "function_declaration": true,
+      178 +  "class_declaration":    true,
+      179 +  "object_declaration":   true,
+      180 +}
+      181 +
+      182 +// resolveEndWithTreeSitterKotlin returns the 1-based end line of the Kotlin
+      183 +// definition starting at startLine (1-based).
+      184 +func resolveEndWithTreeSitterKotlin(content []byte, startLine int) (int, error) {
+      185 +  return resolveEndWithTreeSitter(kotlin.GetLanguage(), ktDefinitionTypes, content, startLine)
+      186 +}
+      187 +
+      188  // isPHPFile reports whether path is a PHP source file.
+      189  func isPHPFile(path string) bool {
+      190    return filepath.Ext(path) == ".php"
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ main.go に Kotlin ケースを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      336        tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+      337      case isHSFile(tag.Path):
+      338        tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+      339 +    case isKtFile(tag.Path):
+      340 +      tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, startLine)
+      341      case isPHPFile(tag.Path):
+      342        tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, startLine)
+      343      case isMLFile(tag.Path):
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ テストデータを作成します。
+
+⏺ Bash(mkdir -p /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata/kt)
+  ⎿  Done
+
+⏺ Write(testdata/kt/sample.kt)
+  ⎿  Wrote 28 lines to testdata/kt/sample.kt
+       1 fun greet(name: String): String {
+       2     return "Hello, $name!"
+       3 }
+       4
+       5 fun add(x: Int, y: Int): Int = x + y
+       6
+       7 data class Point(val x: Double, val y: Double)
+       8
+       9 class Circle(private val radius: Double) {
+      10     fun area(): Double {
+     … +18 lines (ctrl+o to expand)
+
+⏺ Write(testdata/kt/tags)
+  ⎿  Wrote 12 lines to testdata/kt/tags
+       1 !_TAG_FILE_FORMAT      2       /extended format; --format=1 will not append ;" to lines/
+       2 !_TAG_FILE_SORTED      1       /0=unsorted, 1=sorted, 2=foldcase/
+       3 !_TAG_PROGRAM_NAME     Universal Ctags //
+       4 Circle kt/sample.kt    /^class Circle(private val radius: Double) {$/;"        kind:class      line:9  language:Kotlin
+       5 Direction      kt/sample.kt    /^enum class Direction {$/;"    kind:class      line:26 language:Kotlin
+       6 MathUtils      kt/sample.kt    /^object MathUtils {$/;"        kind:object     line:22 language:Kotlin
+       7 Point  kt/sample.kt    /^data class Point(val x: Double, val y: Double)$/;"    kind:class      line:7  language:Kotlin
+       8 Shape  kt/sample.kt    /^interface Shape {$/;" kind:interface  line:17 language:Kotlin
+       9 add    kt/sample.kt    /^fun add(x: Int, y: Int): Int = x + y$/;"      kind:function   line:5  language:Kotlin
+      10 area   kt/sample.kt    /^    fun area(): Double {$/;"  kind:function   line:10 language:Kotlin
+     … +2 lines (ctrl+o to expand)
+
+⏺ Bash(readtags -e -t testdata/kt/tags greet && echo "---" && readtags -e -t testdata/kt/tags Circle)
+  ⎿  greet      kt/sample.kt    /^fun greet(name: String): String {$/;" kind:function   language:Kotlin
+     ---
+     Circle     kt/sample.kt    /^class Circle(private val radius: Double) {$/;"        kind:class      language:Kotlin
+
+⏺ テストを追加します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 130 lines
+      299    }
+      300  }
+      301
+      302 +// sample Kotlin source used across unit tests.
+      303 +// Content must match testdata/kt/sample.kt exactly.
+      304 +var ktSample = []byte(`fun greet(name: String): String {
+      305 +    return "Hello, $name!"
+      306 +}
+      307 +
+      308 +fun add(x: Int, y: Int): Int = x + y
+      309 +
+      310 +data class Point(val x: Double, val y: Double)
+      311 +
+      312 +class Circle(private val radius: Double) {
+      313 +    fun area(): Double {
+      314 +        return Math.PI * radius * radius
+      315 +    }
+      316 +
+      317 +    fun perimeter(): Double = 2 * Math.PI * radius
+      318 +}
+      319 +
+      320 +interface Shape {
+      321 +    fun area(): Double
+      322 +    fun perimeter(): Double
+      323 +}
+      324 +
+      325 +object MathUtils {
+      326 +    fun square(n: Int): Int = n * n
+      327 +}
+      328 +
+      329 +enum class Direction {
+      330 +    UP, DOWN, LEFT, RIGHT
+      331 +}
+      332 +`)
+      333 +
+      334 +// ---- resolveEndWithTreeSitterKotlin tests ----
+      335 +
+      336 +func TestResolveEndWithTreeSitterKotlin_FunctionMultiLine(t *testing.T) {
+      337 +  // fun greet starts at line 1, ends at line 3
+      338 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 1)
+      339 +  if err != nil {
+      340 +    t.Fatalf("unexpected error: %v", err)
+      341 +  }
+      342 +  if end != 3 {
+      343 +    t.Errorf("end: got %d, want 3", end)
+      344 +  }
+      345 +}
+      346 +
+      347 +func TestResolveEndWithTreeSitterKotlin_FunctionExpressionBody(t *testing.T) {
+      348 +  // fun add ... = x + y starts at line 5, ends at line 5
+      349 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 5)
+      350 +  if err != nil {
+      351 +    t.Fatalf("unexpected error: %v", err)
+      352 +  }
+      353 +  if end != 5 {
+      354 +    t.Errorf("end: got %d, want 5", end)
+      355 +  }
+      356 +}
+      357 +
+      358 +func TestResolveEndWithTreeSitterKotlin_DataClass(t *testing.T) {
+      359 +  // data class Point starts at line 7, ends at line 7
+      360 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 7)
+      361 +  if err != nil {
+      362 +    t.Fatalf("unexpected error: %v", err)
+      363 +  }
+      364 +  if end != 7 {
+      365 +    t.Errorf("end: got %d, want 7", end)
+      366 +  }
+      367 +}
+      368 +
+      369 +func TestResolveEndWithTreeSitterKotlin_Class(t *testing.T) {
+      370 +  // class Circle starts at line 9, ends at line 15
+      371 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 9)
+      372 +  if err != nil {
+      373 +    t.Fatalf("unexpected error: %v", err)
+      374 +  }
+      375 +  if end != 15 {
+      376 +    t.Errorf("end: got %d, want 15", end)
+      377 +  }
+      378 +}
+      379 +
+      380 +func TestResolveEndWithTreeSitterKotlin_Method(t *testing.T) {
+      381 +  // fun area inside Circle starts at line 10, ends at line 12
+      382 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 10)
+      383 +  if err != nil {
+      384 +    t.Fatalf("unexpected error: %v", err)
+      385 +  }
+      386 +  if end != 12 {
+      387 +    t.Errorf("end: got %d, want 12", end)
+      388 +  }
+      389 +}
+      390 +
+      391 +func TestResolveEndWithTreeSitterKotlin_Interface(t *testing.T) {
+      392 +  // interface Shape starts at line 17, ends at line 20
+      393 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 17)
+      394 +  if err != nil {
+      395 +    t.Fatalf("unexpected error: %v", err)
+      396 +  }
+      397 +  if end != 20 {
+      398 +    t.Errorf("end: got %d, want 20", end)
+      399 +  }
+      400 +}
+      401 +
+      402 +func TestResolveEndWithTreeSitterKotlin_Object(t *testing.T) {
+      403 +  // object MathUtils starts at line 22, ends at line 24
+      404 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 22)
+      405 +  if err != nil {
+      406 +    t.Fatalf("unexpected error: %v", err)
+      407 +  }
+      408 +  if end != 24 {
+      409 +    t.Errorf("end: got %d, want 24", end)
+      410 +  }
+      411 +}
+      412 +
+      413 +func TestResolveEndWithTreeSitterKotlin_Enum(t *testing.T) {
+      414 +  // enum class Direction starts at line 26, ends at line 28
+      415 +  end, err := resolveEndWithTreeSitterKotlin(ktSample, 26)
+      416 +  if err != nil {
+      417 +    t.Fatalf("unexpected error: %v", err)
+      418 +  }
+      419 +  if end != 28 {
+      420 +    t.Errorf("end: got %d, want 28", end)
+      421 +  }
+      422 +}
+      423 +
+      424 +func TestResolveEndWithTreeSitterKotlin_LineNotFound(t *testing.T) {
+      425 +  // line 4 is blank — no definition starts there
+      426 +  _, err := resolveEndWithTreeSitterKotlin(ktSample, 4)
+      427 +  if err == nil {
+      428 +    t.Fatal("expected error for blank line with no definition")
+      429 +  }
+      430 +}
+      431 +
+      432  // sample PHP source used across unit tests.
+      433  // Content must match testdata/php/sample.php exactly.
+      434  var phpSample = []byte(`<?php
+
+✽ Compacting conversation… (2m 59s · ↑ 2.0k tokens)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+✻ Conversation compacted (ctrl+o for history)
+
+  ⎿  Referenced file treesitter_test.go
+  ⎿  Read testdata/kt/tags (13 lines)
+  ⎿  Read testdata/kt/sample.kt (29 lines)
+  ⎿  Referenced file main.go
+  ⎿  Read treesitter.go (248 lines)
+
+⏺ Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ Now let me check the README to understand what needs to be updated:
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Now I have all the info I need. Let me add the isKtFile table test, HTTP handler integration tests for Kotlin, and update README:
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 19 lines
+      954    }
+      955  }
+      956
+      957 +func TestIsKtFile(t *testing.T) {
+      958 +  cases := []struct {
+      959 +    path string
+      960 +    want bool
+      961 +  }{
+      962 +    {"Main.kt", true},
+      963 +    {"src/App.kt", true},
+      964 +    {"main.go", false},
+      965 +    {"main.rs", false},
+      966 +    {"app.ts", false},
+      967 +    {"noextension", false},
+      968 +  }
+      969 +  for _, c := range cases {
+      970 +    if got := isKtFile(c.path); got != c.want {
+      971 +      t.Errorf("isKtFile(%q) = %v, want %v", c.path, got, c.want)
+      972 +    }
+      973 +  }
+      974 +}
+      975 +
+      976  // ---- HTTP handler integration tests for Rust files ----
+      977
+      978  func TestSnippetHandler_RustFile_UsesTreeSitter(t *testing.T) {
+
+⏺ Now add the HTTP handler integration tests at the end of the file:
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 122 lines
+      1858      }
+      1859    })
+      1860  }
+      1861 +
+      1862 +// ---- HTTP handler integration tests for Kotlin files ----
+      1863 +
+      1864 +func TestSnippetHandler_KTFile_Function(t *testing.T) {
+      1865 +  // kt/tags has no "end" field, so tree-sitter must supply it.
+      1866 +  withCwd(t, "testdata", func() {
+      1867 +    srv := httptest.NewServer(newHandler(true))
+      1868 +    defer srv.Close()
+      1869 +
+      1870 +    resp, err := http.Get(srv.URL + "/snippets/greet?context=kt")
+      1871 +    if err != nil {
+      1872 +      t.Fatal(err)
+      1873 +    }
+      1874 +    defer resp.Body.Close()
+      1875 +
+      1876 +    if resp.StatusCode != http.StatusOK {
+      1877 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1878 +    }
+      1879 +
+      1880 +    var snippets []Snippet
+      1881 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1882 +      t.Fatalf("decode: %v", err)
+      1883 +    }
+      1884 +    if len(snippets) != 1 {
+      1885 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1886 +    }
+      1887 +    s := snippets[0]
+      1888 +    if s.Start != 1 || s.End != 3 {
+      1889 +      t.Errorf("Start/End: got %d/%d, want 1/3", s.Start, s.End)
+      1890 +    }
+      1891 +    if !strings.Contains(s.Code, "fun greet") {
+      1892 +      t.Errorf("Code should contain fun greet, got %q", s.Code)
+      1893 +    }
+      1894 +    if strings.Contains(s.Code, "fun add") {
+      1895 +      t.Errorf("Code should not extend past end of function, got %q", s.Code)
+      1896 +    }
+      1897 +  })
+      1898 +}
+      1899 +
+      1900 +func TestSnippetHandler_KTFile_Class(t *testing.T) {
+      1901 +  withCwd(t, "testdata", func() {
+      1902 +    srv := httptest.NewServer(newHandler(true))
+      1903 +    defer srv.Close()
+      1904 +
+      1905 +    resp, err := http.Get(srv.URL + "/snippets/Circle?context=kt")
+      1906 +    if err != nil {
+      1907 +      t.Fatal(err)
+      1908 +    }
+      1909 +    defer resp.Body.Close()
+      1910 +
+      1911 +    if resp.StatusCode != http.StatusOK {
+      1912 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1913 +    }
+      1914 +
+      1915 +    var snippets []Snippet
+      1916 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1917 +      t.Fatalf("decode: %v", err)
+      1918 +    }
+      1919 +    if len(snippets) != 1 {
+      1920 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1921 +    }
+      1922 +    if snippets[0].Start != 9 || snippets[0].End != 15 {
+      1923 +      t.Errorf("Start/End: got %d/%d, want 9/15", snippets[0].Start, snippets[0].End)
+      1924 +    }
+      1925 +  })
+      1926 +}
+      1927 +
+      1928 +func TestSnippetHandler_KTFile_Object(t *testing.T) {
+      1929 +  withCwd(t, "testdata", func() {
+      1930 +    srv := httptest.NewServer(newHandler(true))
+      1931 +    defer srv.Close()
+      1932 +
+      1933 +    resp, err := http.Get(srv.URL + "/snippets/MathUtils?context=kt")
+      1934 +    if err != nil {
+      1935 +      t.Fatal(err)
+      1936 +    }
+      1937 +    defer resp.Body.Close()
+      1938 +
+      1939 +    if resp.StatusCode != http.StatusOK {
+      1940 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1941 +    }
+      1942 +
+      1943 +    var snippets []Snippet
+      1944 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1945 +      t.Fatalf("decode: %v", err)
+      1946 +    }
+      1947 +    if len(snippets) != 1 {
+      1948 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1949 +    }
+      1950 +    if snippets[0].Start != 22 || snippets[0].End != 24 {
+      1951 +      t.Errorf("Start/End: got %d/%d, want 22/24", snippets[0].Start, snippets[0].End)
+      1952 +    }
+      1953 +  })
+      1954 +}
+      1955 +
+      1956 +func TestLinesHandler_KTFile_UsesTreeSitter(t *testing.T) {
+      1957 +  withCwd(t, "testdata", func() {
+      1958 +    srv := httptest.NewServer(newHandler(true))
+      1959 +    defer srv.Close()
+      1960 +
+      1961 +    resp, err := http.Get(srv.URL + "/lines/greet?context=kt")
+      1962 +    if err != nil {
+      1963 +      t.Fatal(err)
+      1964 +    }
+      1965 +    defer resp.Body.Close()
+      1966 +
+      1967 +    if resp.StatusCode != http.StatusOK {
+      1968 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1969 +    }
+      1970 +
+      1971 +    var ranges []LineRange
+      1972 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1973 +      t.Fatalf("decode: %v", err)
+      1974 +    }
+      1975 +    if len(ranges) != 1 {
+      1976 +      t.Fatalf("expected 1 range, got %d", len(ranges))
+      1977 +    }
+      1978 +    if ranges[0].Start != 1 || ranges[0].End != 3 {
+      1979 +      t.Errorf("Start/End: got %d/%d, want 1/3", ranges[0].Start, ranges[0].End)
+      1980 +    }
+      1981 +  })
+      1982 +}
+
+⏺ Now update README.md to add Kotlin:
+
+⏺ Update(README.md)
+  ⎿  File must be read first
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      20  | `-l` | — | Shorthand for `-listen` |
+      21  | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 -| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haske
+         -ll `.hs`, OCaml `.ml`/`.mli`, and PHP `.php`) |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haske
+         +ll `.hs`, OCaml `.ml`/`.mli`, PHP `.php`, and Kotlin `.kt`) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ Update(README.md)
+  ⎿  Added 2 lines, removed 2 lines
+      154  The end line is resolved in the following order of priority:
+      155
+      156  1. The `end` extension field recorded in the ctags tags file.
+      157 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, or `.php`).
+      157 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`).
+      158  3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
+      159
+      160  **Path Parameters**
+     ...
+      209  The end line is resolved in the following order of priority:
+      210
+      211  1. The `end` extension field recorded in the ctags tags file.
+      212 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, or `.php`).
+      212 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`).
+      213  3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
+      214
+      215  **Path Parameters**
+
+⏺ Now run the tests to verify everything passes:
+
+⏺ Bash(go test ./... -run "Kotlin|KTFile|IsKt" -v 2>&1 | tail -40)
+  ⎿  === RUN   TestResolveEndWithTreeSitterKotlin_FunctionMultiLine
+     --- PASS: TestResolveEndWithTreeSitterKotlin_FunctionMultiLine (0.00s)
+     === RUN   TestResolveEndWithTreeSitterKotlin_FunctionExpressionBody
+     … +31 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+⏺ All 14 Kotlin tests pass. Let me do a final full test run to confirm nothing is broken:
+
+⏺ Bash(go test ./... 2>&1 | tail -5)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.615s
+
+⏺ All tests pass. Here's a summary of what was added for Kotlin support:
+
+  treesitter_test.go
+  - TestIsKtFile — table-driven test for isKtFile()
+  - TestSnippetHandler_KTFile_Function — verifies greet function resolves to lines 1–3
+  - TestSnippetHandler_KTFile_Class — verifies Circle class resolves to lines 9–15
+  - TestSnippetHandler_KTFile_Object — verifies MathUtils object resolves to lines 22–24
+  - TestLinesHandler_KTFile_UsesTreeSitter — verifies /lines/greet returns Start=1, End=3
+
+  README.md — added .kt to the supported languages list in the --tree-sitter flag description and in both endpoint documentation sections.
+
+✻ Crunched for 5m 12s
+```

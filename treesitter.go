@@ -7,6 +7,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/kotlin"
 	"github.com/smacker/go-tree-sitter/php"
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
@@ -162,6 +163,26 @@ var hsDefinitionTypes = map[string]bool{
 // definition starting at startLine (1-based).
 func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
 	return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+}
+
+// isKtFile reports whether path is a Kotlin source file.
+func isKtFile(path string) bool {
+	return filepath.Ext(path) == ".kt"
+}
+
+// ktDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Kotlin source files. Kotlin interfaces and enums are
+// represented as class_declaration in the tree-sitter grammar.
+var ktDefinitionTypes = map[string]bool{
+	"function_declaration": true,
+	"class_declaration":    true,
+	"object_declaration":   true,
+}
+
+// resolveEndWithTreeSitterKotlin returns the 1-based end line of the Kotlin
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterKotlin(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(kotlin.GetLanguage(), ktDefinitionTypes, content, startLine)
 }
 
 // isPHPFile reports whether path is a PHP source file.
