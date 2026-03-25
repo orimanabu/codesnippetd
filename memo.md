@@ -8108,3 +8108,342 @@ eの1行のみを返してください。endLineが0の場合、HTTPのステー
 
 ✻ Crunched for 5m 12s
 ```
+
+```
+❯ `curl -s 'localhost:8999/snippets/commonRun?context=square/okhttp'` を実行すると、`reading file okcurl/src/main/kotlin/okhttp3/curl/internal/-MainCommon.kt: open
+okcurl/src/main/kotlin/okhttp3/curl/internal/-MainCommon.kt: no such file or directory` というエラーになりました。resolveStartEnd()の`if needFile`
+の中のos.ReadFile()がエラーになっているようです。tag.Pathにこのファイル名が入るのはおかしいように思います。調査してください
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ 原因が分かりました。
+
+  問題: resolveStartEnd() と snippetForTag() は tag.Path（タグファイル内の相対パス）をそのまま os.ReadFile() に渡しています。タグファイル内のパスは
+  タグファイルが置かれたディレクトリからの相対パス ですが、コードは プロセスの cwd からの相対パス として扱っています。
+
+  例:
+  - context=square/okhttp → tagsPath = ./square/okhttp/tags
+  - tags ファイル内の Path = okcurl/src/main/kotlin/.../...kt（square/okhttp/ 以下からの相対パス）
+  - 期待される実際のパス = square/okhttp/okcurl/src/.../...kt
+  - 実際に開こうとするパス = okcurl/src/.../...kt ← cwd 直下を誤って参照
+
+  修正方針: tagsPath のディレクトリ部分（= コンテキストディレクトリ）を tag.Path に prefix として付与する。
+
+⏺ Update(main.go)
+  ⎿  Added 21 lines, removed 19 lines
+      279  }
+      280
+      281  // resolveStartEnd returns the start and end line numbers for a Tag.
+      282 +// contextDir is the directory containing the tags file; it is prepended to
+      283 +// tag.Path (which is relative to the tags file) when reading source files.
+      284  // The source file is read only when pattern matching is needed (tag.Line == 0).
+      285  // If the "end" extension field is absent and useTreeSitter is true and the file
+      284 -// is a Rust source file, tree-sitter is used to determine the end line.
+      285 -// Otherwise endLine defaults to the total line count of the file.
+      286 -func resolveStartEnd(tag Tag, useTreeSitter bool) (startLine, endLine int, err error) {
+      286 +// is a supported language, tree-sitter is used to determine the end line.
+      287 +// If neither source provides an end line, endLine is returned as 0.
+      288 +func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+      289 +  filePath := filepath.Join(contextDir, tag.Path)
+      290    needFile := tag.Line == 0 && tag.Pattern != ""
+      291
+      292    var lines []string
+      293    if needFile {
+      291 -    data, readErr := os.ReadFile(tag.Path)
+      294 +    data, readErr := os.ReadFile(filePath)
+      295      if readErr != nil {
+      293 -      log.Printf("XXX resolveStartEnd 1: %s", tag.Path)
+      294 -      return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+      296 +      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
+      297      }
+      298      lines = strings.Split(string(data), "\n")
+      299    }
+     ...
+      303      startLine = findPatternLine(lines, tag.Pattern)
+      304    }
+      305    if startLine <= 0 {
+      304 -    return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, tag.Path)
+      306 +    return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
+      307    }
+      308
+      309    if endStr, ok := tag.Extra["end"]; ok {
+     ...
+      313      }
+      314    }
+      315
+      314 -  // end field absent: read the file (if not already read) and try tree-sitter for
+      315 -  // Rust files, otherwise fall back to EOF.
+      316 +  // end field absent: read the file (if not already read) and try tree-sitter.
+      317    var data []byte
+      318    if lines == nil {
+      319      var readErr error
+      319 -    data, readErr = os.ReadFile(tag.Path)
+      320 +    data, readErr = os.ReadFile(filePath)
+      321      if readErr != nil {
+      321 -      log.Printf("XXX resolveStartEnd 2: %s", tag.Path)
+      322 -      return 0, 0, fmt.Errorf("reading file %s: %w", tag.Path, readErr)
+      322 +      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
+      323      }
+      324      lines = strings.Split(string(data), "\n")
+      325    } else {
+     ...
+      356  }
+      357
+      358  // snippetForTag resolves a Snippet from a Tag by reading the source file.
+      359 -func snippetForTag(tag Tag, useTreeSitter bool) (Snippet, error) {
+      360 -  startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
+      359 +// contextDir is the directory containing the tags file.
+      360 +func snippetForTag(tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
+      361 +  startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
+      362    if err != nil {
+      363      return Snippet{}, err
+      364    }
+      365
+      365 -  data, err := os.ReadFile(tag.Path)
+      366 +  filePath := filepath.Join(contextDir, tag.Path)
+      367 +  data, err := os.ReadFile(filePath)
+      368    if err != nil {
+      367 -    log.Printf("XXX snippetForTag: %s", tag.Path)
+      368 -    return Snippet{}, fmt.Errorf("reading file %s: %w", tag.Path, err)
+      369 +    return Snippet{}, fmt.Errorf("reading file %s: %w", filePath, err)
+      370    }
+      371    lines := strings.Split(string(data), "\n")
+      372
+     ...
+      386
+      387  // lineRangeForTag resolves the start and end line numbers for a Tag without reading
+      388  // the full file content (the file is read only when pattern matching is needed).
+      388 -func lineRangeForTag(tag Tag, useTreeSitter bool) (LineRange, error) {
+      389 -  startLine, endLine, err := resolveStartEnd(tag, useTreeSitter)
+      389 +// contextDir is the directory containing the tags file.
+      390 +func lineRangeForTag(tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
+      391 +  startLine, endLine, err := resolveStartEnd(tag, contextDir, useTreeSitter)
+      392    if err != nil {
+      393      return LineRange{}, err
+      394    }
+
+⏺ 次にハンドラ側で contextDir を計算して渡すように修正します。
+
+⏺ Update(main.go)
+  ⎿  Added 4 lines, removed 2 lines
+      476      tagName := r.PathValue("name")
+      477      context := r.URL.Query().Get("context")
+      478      tagsPath := tagsFileForContext(context)
+      479 +    contextDir := filepath.Dir(tagsPath)
+      480
+      481      results, err := lookupTag(tagsPath, tagName)
+      482      if err != nil {
+     ...
+      495
+      496      var snippets []Snippet
+      497      for _, tag := range results {
+      497 -      s, err := snippetForTag(tag, *useTreeSitter)
+      498 +      s, err := snippetForTag(tag, contextDir, *useTreeSitter)
+      499        if err != nil {
+      500          http.Error(w, err.Error(), http.StatusInternalServerError)
+      501          return
+     ...
+      513      tagName := r.PathValue("name")
+      514      context := r.URL.Query().Get("context")
+      515      tagsPath := tagsFileForContext(context)
+      516 +    contextDir := filepath.Dir(tagsPath)
+      517
+      518      results, err := lookupTag(tagsPath, tagName)
+      519      if err != nil {
+     ...
+      532
+      533      var ranges []LineRange
+      534      for _, tag := range results {
+      533 -      lr, err := lineRangeForTag(tag, *useTreeSitter)
+      535 +      lr, err := lineRangeForTag(tag, contextDir, *useTreeSitter)
+      536        if err != nil {
+      537          http.Error(w, err.Error(), http.StatusInternalServerError)
+      538          return
+  ⎿  Found 12 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ テスト側も修正します。
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ テスト内の newHandler も同じ問題を抱えているので、まとめて修正します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 4 lines, removed 2 lines
+      235      tagName := r.PathValue("name")
+      236      context := r.URL.Query().Get("context")
+      237      tagsPath := tagsFileForContext(context)
+      238 +    contextDir := filepath.Dir(tagsPath)
+      239
+      240      results, err := lookupTag(tagsPath, tagName)
+      241      if err != nil {
+     ...
+      253
+      254      var snippets []Snippet
+      255      for _, tag := range results {
+      255 -      s, err := snippetForTag(tag, useTreeSitter)
+      256 +      s, err := snippetForTag(tag, contextDir, useTreeSitter)
+      257        if err != nil {
+      258          http.Error(w, err.Error(), http.StatusInternalServerError)
+      259          return
+     ...
+      268      tagName := r.PathValue("name")
+      269      context := r.URL.Query().Get("context")
+      270      tagsPath := tagsFileForContext(context)
+      271 +    contextDir := filepath.Dir(tagsPath)
+      272
+      273      results, err := lookupTag(tagsPath, tagName)
+      274      if err != nil {
+     ...
+      286
+      287      var ranges []LineRange
+      288      for _, tag := range results {
+      287 -      lr, err := lineRangeForTag(tag, useTreeSitter)
+      289 +      lr, err := lineRangeForTag(tag, contextDir, useTreeSitter)
+      290        if err != nil {
+      291          http.Error(w, err.Error(), http.StatusInternalServerError)
+      292          return
+
+⏺ 次に、main_test.go 内のユニットテスト側の直接呼び出しを修正します。これらのテストは withCwd(t, "testdata", ...) 内で実行されるため contextDir = "." です。
+
+⏺ Read 1 file (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ writeTemp でできた絶対パスを filepath.Join(".", "/tmp/...") すると正しくないパスになります。絶対パスはそのまま使う処理が必要です。
+
+⏺ Update(main.go)
+  ⎿  Added 10 lines
+      278    return strings.Join(lines[start-1:end], "\n")
+      279  }
+      280
+      281 +// resolveFilePath returns the path to the source file for a tag.
+      282 +// If tagPath is already absolute it is returned unchanged; otherwise contextDir
+      283 +// (the directory that contains the tags file) is prepended.
+      284 +func resolveFilePath(contextDir, tagPath string) string {
+      285 +  if filepath.IsAbs(tagPath) {
+      286 +    return tagPath
+      287 +  }
+      288 +  return filepath.Join(contextDir, tagPath)
+      289 +}
+      290 +
+      291  // resolveStartEnd returns the start and end line numbers for a Tag.
+      292  // contextDir is the directory containing the tags file; it is prepended to
+      293  // tag.Path (which is relative to the tags file) when reading source files.
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      296  // is a supported language, tree-sitter is used to determine the end line.
+      297  // If neither source provides an end line, endLine is returned as 0.
+      298  func resolveStartEnd(tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+      299 -  filePath := filepath.Join(contextDir, tag.Path)
+      299 +  filePath := resolveFilePath(contextDir, tag.Path)
+      300    needFile := tag.Line == 0 && tag.Pattern != ""
+      301
+      302    var lines []string
+     ...
+      373      return Snippet{}, err
+      374    }
+      375
+      376 -  filePath := filepath.Join(contextDir, tag.Path)
+      376 +  filePath := resolveFilePath(contextDir, tag.Path)
+      377    data, err := os.ReadFile(filePath)
+      378    if err != nil {
+      379      return Snippet{}, fmt.Errorf("reading file %s: %w", filePath, err)
+
+⏺ 次にテスト側の直接呼び出しを修正します。writeTemp は絶対パスを返すので contextDir = "." で問題ありません。
+
+⏺ Bash(sed -i '' 's/snippetForTag(tag, false)/snippetForTag(tag, ".", false)/g; s/snippetForTag(tag, true)/snippetForTag(tag, ".", true)/g; s/lineRangeForTag(tag, fals…)
+  ⎿  (No output)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  Error: Exit code 1
+     2026/03/25 09:41:51 GET /tags/MyStruct 200 4.556666ms
+     2026/03/25 09:41:51 GET /tags/overloaded 200 3.400875ms
+     2026/03/25 09:41:51 GET /tags/NonExistentTag 404 3.505167ms
+     2026/03/25 09:41:51 GET /tags/ 400 5.167µs
+     2026/03/25 09:41:51 GET /tags/anything 404 90.333µs
+     2026/03/25 09:41:51 GET /tags/SubFunc 200 3.74275ms
+     2026/03/25 09:41:51 GET /tags/Run 200 2.970459ms
+     2026/03/25 09:41:51 GET /healthz 200 2.417µs
+     2026/03/25 09:41:51 GET /healthz 200 4.583µs
+     … +133 lines (ctrl+o to see all)
+
+⏺ context=rust の場合、contextDir="rust" で tag.Path="rust/sample.rs" だと "rust/rust/sample.rs" になってしまいます。タグファイル内のパスの形式を確認します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ テストデータの tags ファイルのパス形式を確認します。
+
+⏺ Bash(for d in rust js ts hs ocaml php kt sub; do
+        echo "=== $d/tags ==="…)
+  ⎿  === rust/tags ===
+     RustPoint  rust/sample.rs  /^struct RustPoint {$/;"        kind:struct     line:9  language:Rust
+     add        rust/sample.rs  /^fn add(a: i32, b: i32) -> i32 {$/;"   kind:function   line:5  language:Rust
+     … +20 lines (ctrl+o to expand)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ テストデータの tags ファイルが testdata/ を cwd として生成されているため、パスに rust/、js/ 等のプレフィックスが付いています。実際のユーザーは square/okhttp/ 内で ctags
+  を実行するので、パスはコンテキストディレクトリ相対になります。
+
+  テストデータを実際の用途と一致させるため、各 tags ファイルのパスからコンテキストプレフィックスを除去します。
+
+⏺ Bash(cd /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata
+      # Fix each context tags file: remove the leading "context/" prefix from paths…)
+  ⎿  (No output)
+
+⏺ Bash(for d in rust js ts hs ocaml php kt sub; do
+        echo "=== $d/tags ==="…)
+  ⎿  === rust/tags ===
+     grep: testdata/rust/tags: No such file or directory
+     === js/tags ===
+     … +13 lines (ctrl+o to expand)
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ パスが sample.rs になりました。次に、テストコードでパスを参照している箇所を修正します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(sed -i '' 's|"ocaml/sample\.ml"|"sample.ml"|g; s|"ocaml/sample\.mli"|"sample.mli"|g' /Users/ori/devel/src/github.com/orimanabu/codesnippetd/treesitter_test.go)
+  ⎿  (No output)
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(go test ./... 2>&1 | grep -E "FAIL|PASS|ok" | head -20)
+  ⎿  (No output)
+
+⏺ Bash(go test ./... 2>&1 | tail -20)
+  ⎿  go: warning: "./..." matched no packages
+     no packages to test
+
+⏺ Bash(cd /Users/ori/devel/src/github.com/orimanabu/codesnippetd && go test ./... 2>&1 | tail -30)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.814s
+
+⏺ 全テストがパスしました。変更内容をまとめます。
+
+  ---
+  原因:
+
+  resolveStartEnd() と snippetForTag() が tag.Path（タグファイル内の相対パス）を、コンテキストディレクトリのプレフィックスなしでそのまま os.ReadFile() に渡していました。
+
+  - context=square/okhttp → tagsPath = ./square/okhttp/tags → contextDir = square/okhttp
+  - tags ファイル内の Path = okcurl/src/.../foo.kt（square/okhttp/ 相対）
+  - 実際に開くべきパス = square/okhttp/okcurl/src/.../foo.kt
+  - 実際に開こうとしていたパス = okcurl/src/.../foo.kt ← cwd 直下を誤って参照
+
+  修正内容:
+
+  1. main.go: resolveFilePath(contextDir, tagPath) ヘルパーを追加（絶対パスはそのまま、相対パスには contextDir を prefix）。resolveStartEnd()・snippetForTag()・lineRangeForTag() に
+   contextDir string 引数を追加。ハンドラ側で contextDir := filepath.Dir(tagsPath) を計算して渡すよう修正。
+  2. テストデータ: testdata/{rust,js,ts,hs,ocaml,php,kt,sub}/tags の各エントリのパスからコンテキストディレクトリのプレフィックス（例: rust/sample.rs →
+  sample.rs）を除去。これにより、「tags ファイルのパスはそのファイルが置かれたディレクトリからの相対パス」という実際の用途と一致させました。
+  3. main_test.go / treesitter_test.go: snippetForTag・lineRangeForTag の直接呼び出し箇所に contextDir="." を追加。OCaml のパスアサーション（"ocaml/sample.ml" →
+  "sample.ml"）を修正。
+
+✻ Sautéed for 4m 48s
+```
