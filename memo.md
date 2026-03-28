@@ -9920,3 +9920,39 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
   <Leader> のデフォルトは \（変更したい場合は let mapleader = "," などを vimrc に追加）。
 ```
+
+```
+❯ '/pipe'アクセス時のアクセスログには"parser=..."を出さないでください
+
+⏺ Explore(Find /pipe access log code)
+  ⎿  Done (7 tool uses · 26.5k tokens · 18s)
+  (ctrl+o to expand)
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 8 lines, removed 4 lines
+      100      r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
+      101      rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+      102      next.ServeHTTP(rec, r)
+      103 -    parser := "ctags"
+      104 -    if meta.usedTreeSitter {
+      105 -      parser = "tree-sitter"
+      103 +    if r.URL.Path == "/pipe" {
+      104 +      log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+      105 +    } else {
+      106 +      parser := "ctags"
+      107 +      if meta.usedTreeSitter {
+      108 +        parser = "tree-sitter"
+      109 +      }
+      110 +      log.Printf("%s %s %d %s parser=%s", r.Method, r.URL.Path, rec.status, time.Since(start), parser)
+      111      }
+      107 -    log.Printf("%s %s %d %s parser=%s", r.Method, r.URL.Path, rec.status, time.Since(start), parser)
+      112    })
+      113  }
+      114
+
+⏺ /pipe へのアクセス時は parser=... を出力しないようにしました。/pipe 以外のエンドポイントは従来通りです。
+
+✻ Brewed for 32s
+```
