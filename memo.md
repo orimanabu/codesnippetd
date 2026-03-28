@@ -9828,3 +9828,95 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
     - リージョンなし → (car kill-ring) で最新の kill ring エントリを使用
     - kill ring が空の場合は user-error でユーザーに通知して中断
 ```
+
+```
+❯ vim拡張について、ビジュアルモードで「Vを押して範囲選択 → ":'<,'>CodesnippetdPost"で選択した範囲をcodesnippetdに送信」ができるようにしてください
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ 現在のCodesnippetdPostコマンドは常にヤンクバッファを使う定義になっています（visual=0固定）。-rangeオプションを追加して、:'<,'>CodesnippetdPostで渡される行範囲を使うよう修正します
+  。
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 16 lines, removed 2 lines
+      102    call s:Post(l:content)
+      103  endfunction
+      104
+      105 -" :CodesnippetdPost  (normal mode) - send the yank buffer
+      106 -command! CodesnippetdPost call s:PostSelectionOrYank(0)
+      105 +" POST lines in [line1, line2] to /pipe.
+      106 +function! s:PostRange(line1, line2) abort
+      107 +  let l:lines = getline(a:line1, a:line2)
+      108 +  let l:content = join(l:lines, "\n")
+      109 +  if empty(l:content)
+      110 +    echohl WarningMsg
+      111 +    echom 'codesnippetd: selection is empty'
+      112 +    echohl None
+      113 +    return
+      114 +  endif
+      115 +  call s:Post(l:content)
+      116 +endfunction
+      117
+      118 +" :CodesnippetdPost           (normal mode) - send the current line
+      119 +" :'<,'>CodesnippetdPost      (visual mode) - send the selected lines
+      120 +command! -range CodesnippetdPost call s:PostRange(<line1>, <line2>)
+      121 +
+      122  " <Plug>(codesnippetd-post) mappings - bind these in your vimrc:
+      123  "   nmap <Leader>cp <Plug>(codesnippetd-post)
+      124  "   xmap <Leader>cp <Plug>(codesnippetd-post)
+
+⏺ 確認します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ 変更内容の説明:
+
+  - s:PostRange(line1, line2) 関数を追加。getline() で指定行範囲のテキストを取得して送信。
+  - CodesnippetdPost コマンドに -range オプションを付与。これにより <line1> / <line2> が自動的に渡される。
+
+  動作：
+  - :'<,'>CodesnippetdPost — ビジュアル選択した行範囲を送信
+  - :CodesnippetdPost — カーソル行を送信（引数なしの場合、<line1> = <line2> = 現在行）
+  - <Leader>cp（xmap） — 従来通りビジュアル選択を送信（s:VisualSelection() 経由）
+
+✻ Cooked for 57s
+
+❯ vim拡張の推奨設定を教えて
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ インストール
+
+  " ~/.vim/plugin/ に置くか、vimrc から source する
+  source ~/.vim/plugin/codesnippetd.vim
+
+  vimrc 設定例
+
+  " ---- codesnippetd ----
+
+  " サーバーがリモートの場合（デフォルト: localhost:8999）
+  " let g:codesnippetd_host = '192.168.1.10'
+  " let g:codesnippetd_port = 9000
+
+  " キーマッピング
+  nmap <Leader>cp <Plug>(codesnippetd-post)   " ノーマルモード: ヤンクバッファを送信
+  xmap <Leader>cp <Plug>(codesnippetd-post)   " ビジュアルモード: 選択範囲を送信
+
+  使い方まとめ
+
+  ┌───────────────────────────────────────┬────────────────────────────────┐
+  │                 操作                  │              動作              │
+  ├───────────────────────────────────────┼────────────────────────────────┤
+  │ yy → <Leader>cp                       │ ヤンクした行を送信             │
+  ├───────────────────────────────────────┼────────────────────────────────┤
+  │ V で範囲選択 → <Leader>cp             │ 選択範囲を送信（xmap 経由）    │
+  ├───────────────────────────────────────┼────────────────────────────────┤
+  │ V で範囲選択 → :'<,'>CodesnippetdPost │ 選択範囲を送信（コマンド経由） │
+  ├───────────────────────────────────────┼────────────────────────────────┤
+  │ :CodesnippetdPost                     │ カーソル行を送信               │
+  ├───────────────────────────────────────┼────────────────────────────────┤
+  │ :{n},{m}CodesnippetdPost              │ 指定行範囲を送信               │
+  └───────────────────────────────────────┴────────────────────────────────┘
+
+  <Leader> のデフォルトは \（変更したい場合は let mapleader = "," などを vimrc に追加）。
+```
