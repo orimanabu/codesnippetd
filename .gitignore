@@ -31,3 +31,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Emacs Lisp byte-compiled files (elisp/)
+elisp/*.elc
+
+# VS Code extension (vscode/)
+vscode/node_modules/
+vscode/out/
