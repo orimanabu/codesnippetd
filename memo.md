@@ -9402,3 +9402,92 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ✻ Crunched for 58s
 ```
+
+```
+❯ emacs lispで、「バッファの内容を `http://localhost:8999`
+にPOSTする」という関数を作ってください。送り先のホスト、ポート番号は変数化してカスタマイズできるようにしてください。ファイルはelispサブフォルダを作ってそこに配置して
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Write(elisp/codesnippetd.el)
+  ⎿  Wrote 50 lines to elisp/codesnippetd.el
+       1 ;;; codesnippetd.el --- Client for codesnippetd /pipe endpoint -*- lexical-binding: t -*-
+       2
+       3 ;; Author: codesnippetd contributors
+       4 ;; Keywords: tools
+       5
+       6 ;;; Commentary:
+       7 ;; Provides a command to POST the current buffer's content to the
+       8 ;; codesnippetd /pipe endpoint.
+       9
+      10 ;;; Code:
+     … +40 lines (ctrl+o to expand)
+
+⏺ 動作確認のため、ファイルを確認します。
+
+⏺ Bash(emacs --batch --eval '(byte-compile-file "elisp/codesnippetd.el")' 2>&1)
+  ⎿  In codesnippetd-post-buffer:
+     codesnippetd.el:37:11: Warning: Unused lexical variable ‘url-request-method’
+     codesnippetd.el:38:11: Warning: Unused lexical variable ‘url-request-extra-headers’
+     codesnippetd.el:39:11: Warning: Unused lexical variable ‘url-request-data’
+
+⏺ 動的変数の宣言が必要です。修正します。
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 2 lines
+       9
+      10  ;;; Code:
+      11
+      12 +(require 'url)
+      13 +
+      14  (defgroup codesnippetd nil
+      15    "Client for the codesnippetd REST API server."
+      16    :group 'tools
+
+⏺ Bash(emacs --batch --eval '(byte-compile-file "elisp/codesnippetd.el")' 2>&1)
+  ⎿  (No output)
+
+⏺ 警告なし。生成されたファイルを確認します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ コンパイルも通りました。.elc は不要なので削除します。
+
+⏺ Bash(rm elisp/codesnippetd.elc)
+  ⎿  Done
+
+⏺ elisp/codesnippetd.el を作成しました。
+
+  ---
+  使い方
+
+  init.el などに以下を追加します:
+
+  (add-to-list 'load-path "/path/to/codesnippetd/elisp")
+  (require 'codesnippetd)
+
+  関数 / コマンド:
+
+  ┌──────────────────────────┬──────────────────────────────────────────────────────────┐
+  │         シンボル         │                           説明                           │
+  ├──────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ codesnippetd-post-buffer │ 現在のバッファ内容を /pipe に POST する (M-x から呼べる) │
+  └──────────────────────────┴──────────────────────────────────────────────────────────┘
+
+  カスタマイズ変数:
+
+  ┌───────────────────┬─────────────┬──────────────────┐
+  │       変数        │ デフォルト  │       説明       │
+  ├───────────────────┼─────────────┼──────────────────┤
+  │ codesnippetd-host │ "localhost" │ サーバのホスト名 │
+  ├───────────────────┼─────────────┼──────────────────┤
+  │ codesnippetd-port │ 8999        │ ポート番号       │
+  └───────────────────┴─────────────┴──────────────────┘
+
+  M-x customize-group RET codesnippetd RET でも設定できます。変更例:
+
+  (setq codesnippetd-host "192.168.1.10"
+        codesnippetd-port 9000)
+
+✻ Worked for 44s
+```
