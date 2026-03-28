@@ -252,6 +252,101 @@ GET /lines/MyFunc?context=myproject
 
 ---
 
+### Write to the Pipe Buffer
+
+```
+POST /pipe
+```
+
+Stores the raw request body in the in-memory pipe buffer. By default the buffer is replaced; pass `?mode=append` to append instead.
+
+**Query Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `mode` | No | If set to `append`, the body is appended to the existing buffer. Any other value (or omitted) replaces the buffer. |
+
+**Request Body**
+
+Any content. The body is stored as-is.
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `204 No Content` | Buffer updated successfully |
+| `500 Internal Server Error` | Failed to read the request body |
+
+**Example**
+
+```
+POST /pipe
+Content-Type: text/plain
+
+hello, world
+```
+
+```
+POST /pipe?mode=append
+Content-Type: text/plain
+
+ appended text
+```
+
+---
+
+### Read from the Pipe Buffer
+
+```
+GET /pipe
+```
+
+Returns the current contents of the in-memory pipe buffer. Returns an empty body if the buffer has not been written to yet.
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200 OK` | Buffer contents (may be empty) |
+
+**Example**
+
+```
+GET /pipe
+```
+
+```
+hello, world
+```
+
+---
+
+### Get Pipe Buffer Status
+
+```
+GET /pipe/status
+```
+
+Returns whether the in-memory pipe buffer is empty.
+
+**Responses**
+
+| Status | Description |
+|--------|-------------|
+| `200 OK` | JSON object with `empty` field |
+
+**Example**
+
+```json
+{"empty": false}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `empty` | boolean | `true` if the buffer is empty, `false` otherwise |
+
+---
+
 ## Line Range Object
 
 | Field | Type | Description |

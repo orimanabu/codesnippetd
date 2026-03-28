@@ -8738,3 +8738,667 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ✻ Baked for 32s
 ```
+
+```
+ ▐▛███▜▌   Claude Code v2.1.76
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/devel/src/github.com/orimanabu/codesnippetd
+
+❯ `/pipe` エンドポイントを新設してください。POSTすると、内部のバッファにその内容を保持します。GETすると、内部バッファの内容を返します。`/pipe/status`をGETすると、バッファの内容が
+空かそうでないかを返します。テストコードとドキュメントの更新もお願いします
+
+⏺ Explore(Explore codebase structure)
+  ⎿  Done (16 tool uses · 40.7k tokens · 1m 32s)
+  (ctrl+o to expand)
+
+⏺ コードベースの構造を把握しました。主要ファイルを読んで実装します。
+
+⏺ Searched for 2 patterns, read 3 files (ctrl+o to expand)
+
+⏺ 全体の構造を把握できました。実装を進めます。
+
+  方針:
+  - pipeBuffer をグローバルな構造体（mutex + []byte）として定義
+  - POST /pipe: body をバッファに保存（上書き）
+  - GET /pipe: バッファ内容をそのまま返す
+  - GET /pipe/status: {"empty": true/false} を返す
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+       6    "errors"
+       7    "flag"
+       8    "fmt"
+       9 +  "io"
+      10    "log"
+      11    "net/http"
+      12    "os"
+     ...
+      14    "path/filepath"
+      15    "strconv"
+      16    "strings"
+      17 +  "sync"
+      18    "time"
+      19  )
+      20
+
+⏺ Update(main.go)
+  ⎿  Added 6 lines
+      58    return json.Marshal(m)
+      59  }
+      60
+      61 +// pipe is the global in-memory buffer used by the /pipe endpoint.
+      62 +var pipe struct {
+      63 +  mu   sync.Mutex
+      64 +  data []byte
+      65 +}
+      66 +
+      67  // requestMetaKey is the context key for requestMeta values.
+      68  type requestMetaKey struct{}
+      69
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 次に main() にハンドラを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 32 lines
+      465      fmt.Fprintln(w, `{"status":"ok"}`)
+      466    })
+      467
+      468 +  mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+      469 +    body, err := io.ReadAll(r.Body)
+      470 +    if err != nil {
+      471 +      http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusInternalServerError)
+      472 +      return
+      473 +    }
+      474 +    pipe.mu.Lock()
+      475 +    pipe.data = body
+      476 +    pipe.mu.Unlock()
+      477 +    w.WriteHeader(http.StatusNoContent)
+      478 +  })
+      479 +
+      480 +  mux.HandleFunc("GET /pipe/status", func(w http.ResponseWriter, r *http.Request) {
+      481 +    pipe.mu.Lock()
+      482 +    empty := len(pipe.data) == 0
+      483 +    pipe.mu.Unlock()
+      484 +    w.Header().Set("Content-Type", "application/json")
+      485 +    if empty {
+      486 +      fmt.Fprintln(w, `{"empty":true}`)
+      487 +    } else {
+      488 +      fmt.Fprintln(w, `{"empty":false}`)
+      489 +    }
+      490 +  })
+      491 +
+      492 +  mux.HandleFunc("GET /pipe", func(w http.ResponseWriter, r *http.Request) {
+      493 +    pipe.mu.Lock()
+      494 +    data := pipe.data
+      495 +    pipe.mu.Unlock()
+      496 +    w.Header().Set("Content-Type", "application/octet-stream")
+      497 +    w.Write(data)
+      498 +  })
+      499 +
+      500    mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      501      context := r.URL.Query().Get("context")
+      502      tagsPath := tagsFileForContext(context)
+
+⏺ 次に newHandler() にも同じハンドラを追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+       6    "encoding/json"
+       7    "errors"
+       8    "fmt"
+       9 +  "io"
+      10    "log"
+      11    "net/http"
+      12    "net/http/httptest"
+  ⎿  Found 4 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 33 lines
+      299      w.Header().Set("Content-Type", "application/json")
+      300      json.NewEncoder(w).Encode(ranges)
+      301    })
+      302 +
+      303 +  mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+      304 +    body, err := io.ReadAll(r.Body)
+      305 +    if err != nil {
+      306 +      http.Error(w, "failed to read request body: "+err.Error(), http.StatusInternalServerError)
+      307 +      return
+      308 +    }
+      309 +    pipe.mu.Lock()
+      310 +    pipe.data = body
+      311 +    pipe.mu.Unlock()
+      312 +    w.WriteHeader(http.StatusNoContent)
+      313 +  })
+      314 +
+      315 +  mux.HandleFunc("GET /pipe/status", func(w http.ResponseWriter, r *http.Request) {
+      316 +    pipe.mu.Lock()
+      317 +    empty := len(pipe.data) == 0
+      318 +    pipe.mu.Unlock()
+      319 +    w.Header().Set("Content-Type", "application/json")
+      320 +    if empty {
+      321 +      fmt.Fprintln(w, `{"empty":true}`)
+      322 +    } else {
+      323 +      fmt.Fprintln(w, `{"empty":false}`)
+      324 +    }
+      325 +  })
+      326 +
+      327 +  mux.HandleFunc("GET /pipe", func(w http.ResponseWriter, r *http.Request) {
+      328 +    pipe.mu.Lock()
+      329 +    data := pipe.data
+      330 +    pipe.mu.Unlock()
+      331 +    w.Header().Set("Content-Type", "application/octet-stream")
+      332 +    w.Write(data)
+      333 +  })
+      334 +
+      335    return accessLog(mux)
+      336  }
+      337
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ テストを書いてからビルド確認します。まずテストコードを追加します。
+
+⏺ Read 1 file (ctrl+o to expand)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ テストをファイルの末尾に追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 151 lines
+      1637    })
+      1638  }
+      1639
+      1640 +// ---- /pipe endpoint tests ----
+      1641 +
+      1642 +// TestPipe_InitiallyEmpty verifies that GET /pipe/status reports empty before any POST.
+      1643 +func TestPipe_InitiallyEmpty(t *testing.T) {
+      1644 +  // Reset global buffer before the test.
+      1645 +  pipe.mu.Lock()
+      1646 +  pipe.data = nil
+      1647 +  pipe.mu.Unlock()
+      1648 +
+      1649 +  srv := httptest.NewServer(newHandler(false))
+      1650 +  defer srv.Close()
+      1651 +
+      1652 +  resp, err := http.Get(srv.URL + "/pipe/status")
+      1653 +  if err != nil {
+      1654 +    t.Fatal(err)
+      1655 +  }
+      1656 +  defer resp.Body.Close()
+      1657 +
+      1658 +  if resp.StatusCode != http.StatusOK {
+      1659 +    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1660 +  }
+      1661 +  var got map[string]interface{}
+      1662 +  if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+      1663 +    t.Fatalf("decode: %v", err)
+      1664 +  }
+      1665 +  if got["empty"] != true {
+      1666 +    t.Errorf("empty: got %v, want true", got["empty"])
+      1667 +  }
+      1668 +}
+      1669 +
+      1670 +// TestPipe_PostAndGet verifies that POST /pipe stores content and GET /pipe retrieves it.
+      1671 +func TestPipe_PostAndGet(t *testing.T) {
+      1672 +  pipe.mu.Lock()
+      1673 +  pipe.data = nil
+      1674 +  pipe.mu.Unlock()
+      1675 +
+      1676 +  srv := httptest.NewServer(newHandler(false))
+      1677 +  defer srv.Close()
+      1678 +
+      1679 +  content := "hello, pipe!"
+      1680 +
+      1681 +  // POST content into the pipe.
+      1682 +  resp, err := http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader(content))
+      1683 +  if err != nil {
+      1684 +    t.Fatal(err)
+      1685 +  }
+      1686 +  defer resp.Body.Close()
+      1687 +  if resp.StatusCode != http.StatusNoContent {
+      1688 +    t.Fatalf("POST status: got %d, want %d", resp.StatusCode, http.StatusNoContent)
+      1689 +  }
+      1690 +
+      1691 +  // GET the content back.
+      1692 +  resp2, err := http.Get(srv.URL + "/pipe")
+      1693 +  if err != nil {
+      1694 +    t.Fatal(err)
+      1695 +  }
+      1696 +  defer resp2.Body.Close()
+      1697 +  if resp2.StatusCode != http.StatusOK {
+      1698 +    t.Fatalf("GET status: got %d, want %d", resp2.StatusCode, http.StatusOK)
+      1699 +  }
+      1700 +  body, err := io.ReadAll(resp2.Body)
+      1701 +  if err != nil {
+      1702 +    t.Fatal(err)
+      1703 +  }
+      1704 +  if string(body) != content {
+      1705 +    t.Errorf("body: got %q, want %q", string(body), content)
+      1706 +  }
+      1707 +}
+      1708 +
+      1709 +// TestPipe_StatusNonEmpty verifies that GET /pipe/status reports non-empty after POST.
+      1710 +func TestPipe_StatusNonEmpty(t *testing.T) {
+      1711 +  pipe.mu.Lock()
+      1712 +  pipe.data = nil
+      1713 +  pipe.mu.Unlock()
+      1714 +
+      1715 +  srv := httptest.NewServer(newHandler(false))
+      1716 +  defer srv.Close()
+      1717 +
+      1718 +  resp, err := http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("data"))
+      1719 +  if err != nil {
+      1720 +    t.Fatal(err)
+      1721 +  }
+      1722 +  resp.Body.Close()
+      1723 +
+      1724 +  resp2, err := http.Get(srv.URL + "/pipe/status")
+      1725 +  if err != nil {
+      1726 +    t.Fatal(err)
+      1727 +  }
+      1728 +  defer resp2.Body.Close()
+      1729 +
+      1730 +  var got map[string]interface{}
+      1731 +  if err := json.NewDecoder(resp2.Body).Decode(&got); err != nil {
+      1732 +    t.Fatalf("decode: %v", err)
+      1733 +  }
+      1734 +  if got["empty"] != false {
+      1735 +    t.Errorf("empty: got %v, want false", got["empty"])
+      1736 +  }
+      1737 +}
+      1738 +
+      1739 +// TestPipe_OverwriteOnPost verifies that a second POST replaces the buffer content.
+      1740 +func TestPipe_OverwriteOnPost(t *testing.T) {
+      1741 +  pipe.mu.Lock()
+      1742 +  pipe.data = nil
+      1743 +  pipe.mu.Unlock()
+      1744 +
+      1745 +  srv := httptest.NewServer(newHandler(false))
+      1746 +  defer srv.Close()
+      1747 +
+      1748 +  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("first"))
+      1749 +  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("second"))
+      1750 +
+      1751 +  resp, err := http.Get(srv.URL + "/pipe")
+      1752 +  if err != nil {
+      1753 +    t.Fatal(err)
+      1754 +  }
+      1755 +  defer resp.Body.Close()
+      1756 +  body, err := io.ReadAll(resp.Body)
+      1757 +  if err != nil {
+      1758 +    t.Fatal(err)
+      1759 +  }
+      1760 +  if string(body) != "second" {
+      1761 +    t.Errorf("body: got %q, want %q", string(body), "second")
+      1762 +  }
+      1763 +}
+      1764 +
+      1765 +// TestPipe_GetEmptyBuffer verifies that GET /pipe on an empty buffer returns 200 with empty body.
+      1766 +func TestPipe_GetEmptyBuffer(t *testing.T) {
+      1767 +  pipe.mu.Lock()
+      1768 +  pipe.data = nil
+      1769 +  pipe.mu.Unlock()
+      1770 +
+      1771 +  srv := httptest.NewServer(newHandler(false))
+      1772 +  defer srv.Close()
+      1773 +
+      1774 +  resp, err := http.Get(srv.URL + "/pipe")
+      1775 +  if err != nil {
+      1776 +    t.Fatal(err)
+      1777 +  }
+      1778 +  defer resp.Body.Close()
+      1779 +  if resp.StatusCode != http.StatusOK {
+      1780 +    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1781 +  }
+      1782 +  body, err := io.ReadAll(resp.Body)
+      1783 +  if err != nil {
+      1784 +    t.Fatal(err)
+      1785 +  }
+      1786 +  if len(body) != 0 {
+      1787 +    t.Errorf("expected empty body, got %q", string(body))
+      1788 +  }
+      1789 +}
+      1790 +
+      1791  // ---- MarshalJSON tests ----
+      1792
+      1793  func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+
+⏺ ビルドとテストを実行します。
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go test -run TestPipe -v 2>&1)
+  ⎿  === RUN   TestPipe_InitiallyEmpty
+     2026/03/28 15:52:40 GET /pipe/status 200 22.541µs parser=ctags
+     --- PASS: TestPipe_InitiallyEmpty (0.00s)
+     … +18 lines (ctrl+o to expand)
+
+⏺ 全テストが通ることも確認します。
+
+⏺ Bash(go test ./... 2>&1 | tail -5)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.798s
+
+⏺ README を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 82 lines
+      252
+      253  ---
+      254
+      255 +### Write to the Pipe Buffer
+      256 +
+      257 +```
+      258 +POST /pipe
+      259 +```
+      260 +
+      261 +Stores the raw request body in the in-memory pipe buffer, replacing any previous content.
+      262 +
+      263 +**Request Body**
+      264 +
+      265 +Any content. The body is stored as-is.
+      266 +
+      267 +**Responses**
+      268 +
+      269 +| Status | Description |
+      270 +|--------|-------------|
+      271 +| `204 No Content` | Buffer updated successfully |
+      272 +| `500 Internal Server Error` | Failed to read the request body |
+      273 +
+      274 +**Example**
+      275 +
+      276 +```
+      277 +POST /pipe
+      278 +Content-Type: text/plain
+      279 +
+      280 +hello, world
+      281 +```
+      282 +
+      283 +---
+      284 +
+      285 +### Read from the Pipe Buffer
+      286 +
+      287 +```
+      288 +GET /pipe
+      289 +```
+      290 +
+      291 +Returns the current contents of the in-memory pipe buffer. Returns an empty body if the buffer has not been written to yet.
+      292 +
+      293 +**Responses**
+      294 +
+      295 +| Status | Description |
+      296 +|--------|-------------|
+      297 +| `200 OK` | Buffer contents (may be empty) |
+      298 +
+      299 +**Example**
+      300 +
+      301 +```
+      302 +GET /pipe
+      303 +```
+      304 +
+      305 +```
+      306 +hello, world
+      307 +```
+      308 +
+      309 +---
+      310 +
+      311 +### Get Pipe Buffer Status
+      312 +
+      313 +```
+      314 +GET /pipe/status
+      315 +```
+      316 +
+      317 +Returns whether the in-memory pipe buffer is empty.
+      318 +
+      319 +**Responses**
+      320 +
+      321 +| Status | Description |
+      322 +|--------|-------------|
+      323 +| `200 OK` | JSON object with `empty` field |
+      324 +
+      325 +**Example**
+      326 +
+      327 +```json
+      328 +{"empty": false}
+      329 +```
+      330 +
+      331 +| Field | Type | Description |
+      332 +|-------|------|-------------|
+      333 +| `empty` | boolean | `true` if the buffer is empty, `false` otherwise |
+      334 +
+      335 +---
+      336 +
+      337  ## Line Range Object
+      338
+      339  | Field | Type | Description |
+
+⏺ 全テストの最終確認。
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.606s
+
+⏺ 全テスト PASS です。実装内容をまとめます。
+
+  ---
+  実装内容
+
+  main.go
+
+  - io, sync を import に追加
+  - グローバルな pipe 変数（sync.Mutex + []byte）を定義
+  - main() に3つのハンドラを追加:
+    - POST /pipe — body をバッファに保存（上書き）、204 No Content を返す
+    - GET /pipe — バッファ内容を application/octet-stream で返す
+    - GET /pipe/status — {"empty": true/false} を返す
+
+  main_test.go
+
+  - io を import に追加
+  - newHandler() に同じ3ハンドラを追加
+  - テスト5件を追加:
+    - TestPipe_InitiallyEmpty — 初期状態で /pipe/status が empty:true
+    - TestPipe_PostAndGet — POST した内容が GET で取得できる
+    - TestPipe_StatusNonEmpty — POST 後は empty:false
+    - TestPipe_OverwriteOnPost — 2回 POST すると上書きされる
+    - TestPipe_GetEmptyBuffer — 空バッファへの GET は 200 + 空ボディ
+
+  README.md
+
+  - POST /pipe, GET /pipe, GET /pipe/status の3エンドポイントをドキュメント化
+
+✻ Brewed for 3m 38s
+
+❯ `/pipe`にPOSTするとき、クエリパラメータに"?mode=append"があると、上書きではなくpipeのバッファに追記するようにしてください。テストコードとドキュメントの更新もお願いします
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 1 line
+      472        return
+      473      }
+      474      pipe.mu.Lock()
+      475 -    pipe.data = body
+      475 +    if r.URL.Query().Get("mode") == "append" {
+      476 +      pipe.data = append(pipe.data, body...)
+      477 +    } else {
+      478 +      pipe.data = body
+      479 +    }
+      480      pipe.mu.Unlock()
+      481      w.WriteHeader(http.StatusNoContent)
+      482    })
+
+⏺ newHandler() のテスト用ハンドラも同様に更新します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 5 lines, removed 1 line
+      307        return
+      308      }
+      309      pipe.mu.Lock()
+      310 -    pipe.data = body
+      310 +    if r.URL.Query().Get("mode") == "append" {
+      311 +      pipe.data = append(pipe.data, body...)
+      312 +    } else {
+      313 +      pipe.data = body
+      314 +    }
+      315      pipe.mu.Unlock()
+      316      w.WriteHeader(http.StatusNoContent)
+      317    })
+
+⏺ テストを追加します。TestPipe_OverwriteOnPost の直後に追記します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 80 lines
+      1766    }
+      1767  }
+      1768
+      1769 +// TestPipe_AppendMode verifies that POST /pipe?mode=append appends to the buffer.
+      1770 +func TestPipe_AppendMode(t *testing.T) {
+      1771 +  pipe.mu.Lock()
+      1772 +  pipe.data = nil
+      1773 +  pipe.mu.Unlock()
+      1774 +
+      1775 +  srv := httptest.NewServer(newHandler(false))
+      1776 +  defer srv.Close()
+      1777 +
+      1778 +  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("hello"))
+      1779 +  http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader(", world"))
+      1780 +
+      1781 +  resp, err := http.Get(srv.URL + "/pipe")
+      1782 +  if err != nil {
+      1783 +    t.Fatal(err)
+      1784 +  }
+      1785 +  defer resp.Body.Close()
+      1786 +  body, err := io.ReadAll(resp.Body)
+      1787 +  if err != nil {
+      1788 +    t.Fatal(err)
+      1789 +  }
+      1790 +  if string(body) != "hello, world" {
+      1791 +    t.Errorf("body: got %q, want %q", string(body), "hello, world")
+      1792 +  }
+      1793 +}
+      1794 +
+      1795 +// TestPipe_AppendModeMultiple verifies that multiple appends accumulate correctly.
+      1796 +func TestPipe_AppendModeMultiple(t *testing.T) {
+      1797 +  pipe.mu.Lock()
+      1798 +  pipe.data = nil
+      1799 +  pipe.mu.Unlock()
+      1800 +
+      1801 +  srv := httptest.NewServer(newHandler(false))
+      1802 +  defer srv.Close()
+      1803 +
+      1804 +  for _, chunk := range []string{"a", "b", "c"} {
+      1805 +    http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader(chunk))
+      1806 +  }
+      1807 +
+      1808 +  resp, err := http.Get(srv.URL + "/pipe")
+      1809 +  if err != nil {
+      1810 +    t.Fatal(err)
+      1811 +  }
+      1812 +  defer resp.Body.Close()
+      1813 +  body, err := io.ReadAll(resp.Body)
+      1814 +  if err != nil {
+      1815 +    t.Fatal(err)
+      1816 +  }
+      1817 +  if string(body) != "abc" {
+      1818 +    t.Errorf("body: got %q, want %q", string(body), "abc")
+      1819 +  }
+      1820 +}
+      1821 +
+      1822 +// TestPipe_DefaultModeOverwritesAfterAppend verifies that a plain POST (no mode) replaces
+      1823 +// content even if the buffer was previously built up with appends.
+      1824 +func TestPipe_DefaultModeOverwritesAfterAppend(t *testing.T) {
+      1825 +  pipe.mu.Lock()
+      1826 +  pipe.data = nil
+      1827 +  pipe.mu.Unlock()
+      1828 +
+      1829 +  srv := httptest.NewServer(newHandler(false))
+      1830 +  defer srv.Close()
+      1831 +
+      1832 +  http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader("old"))
+      1833 +  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("new"))
+      1834 +
+      1835 +  resp, err := http.Get(srv.URL + "/pipe")
+      1836 +  if err != nil {
+      1837 +    t.Fatal(err)
+      1838 +  }
+      1839 +  defer resp.Body.Close()
+      1840 +  body, err := io.ReadAll(resp.Body)
+      1841 +  if err != nil {
+      1842 +    t.Fatal(err)
+      1843 +  }
+      1844 +  if string(body) != "new" {
+      1845 +    t.Errorf("body: got %q, want %q", string(body), "new")
+      1846 +  }
+      1847 +}
+      1848 +
+      1849  // TestPipe_GetEmptyBuffer verifies that GET /pipe on an empty buffer returns 200 with empty body.
+      1850  func TestPipe_GetEmptyBuffer(t *testing.T) {
+      1851    pipe.mu.Lock()
+
+⏺ README を更新します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Update(README.md)
+  ⎿  Added 14 lines, removed 1 line
+      258  POST /pipe
+      259  ```
+      260
+      261 -Stores the raw request body in the in-memory pipe buffer, replacing any previous content.
+      261 +Stores the raw request body in the in-memory pipe buffer. By default the buffer is replaced; pass `?mode=append` to append instead.
+      262
+      263 +**Query Parameters**
+      264 +
+      265 +| Parameter | Required | Description |
+      266 +|-----------|----------|-------------|
+      267 +| `mode` | No | If set to `append`, the body is appended to the existing buffer. Any other value (or omitted) replaces the buffer. |
+      268 +
+      269  **Request Body**
+      270
+      271  Any content. The body is stored as-is.
+     ...
+      286  hello, world
+      287  ```
+      288
+      289 +```
+      290 +POST /pipe?mode=append
+      291 +Content-Type: text/plain
+      292 +
+      293 + appended text
+      294 +```
+      295 +
+      296  ---
+      297
+      298  ### Read from the Pipe Buffer
+
+⏺ Bash(go test -run TestPipe -v 2>&1)
+  ⎿  === RUN   TestPipe_InitiallyEmpty
+     2026/03/28 15:59:40 GET /pipe/status 200 21.583µs parser=ctags
+     --- PASS: TestPipe_InitiallyEmpty (0.00s)
+     … +34 lines (ctrl+o to expand)
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.593s
+
+⏺ 全 PASS です。変更内容:
+
+  main.go / main_test.go (newHandler)
+  - POST /pipe ハンドラで r.URL.Query().Get("mode") == "append" を確認し、append なら pipe.data に追記、それ以外は上書き
+
+  main_test.go — テスト3件を追加:
+  - TestPipe_AppendMode — POST してから ?mode=append で追記されることを確認
+  - TestPipe_AppendModeMultiple — 複数回 append が累積されることを確認
+  - TestPipe_DefaultModeOverwritesAfterAppend — append 後に通常 POST すると上書きされることを確認
+
+  README.md
+  - POST /pipe の説明に mode クエリパラメータの仕様と ?mode=append の例を追記
+
+✻ Crunched for 58s
+```

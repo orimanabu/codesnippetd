@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -54,6 +56,12 @@ func (t Tag) MarshalJSON() ([]byte, error) {
 		m[k] = v
 	}
 	return json.Marshal(m)
+}
+
+// pipe is the global in-memory buffer used by the /pipe endpoint.
+var pipe struct {
+	mu   sync.Mutex
+	data []byte
 }
 
 // requestMetaKey is the context key for requestMeta values.
@@ -455,6 +463,42 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok"}`)
+	})
+
+	mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusInternalServerError)
+			return
+		}
+		pipe.mu.Lock()
+		if r.URL.Query().Get("mode") == "append" {
+			pipe.data = append(pipe.data, body...)
+		} else {
+			pipe.data = body
+		}
+		pipe.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("GET /pipe/status", func(w http.ResponseWriter, r *http.Request) {
+		pipe.mu.Lock()
+		empty := len(pipe.data) == 0
+		pipe.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if empty {
+			fmt.Fprintln(w, `{"empty":true}`)
+		} else {
+			fmt.Fprintln(w, `{"empty":false}`)
+		}
+	})
+
+	mux.HandleFunc("GET /pipe", func(w http.ResponseWriter, r *http.Request) {
+		pipe.mu.Lock()
+		data := pipe.data
+		pipe.mu.Unlock()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(data)
 	})
 
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {

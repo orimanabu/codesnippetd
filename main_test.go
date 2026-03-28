@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -298,6 +299,43 @@ func newHandler(useTreeSitter bool) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ranges)
 	})
+
+	mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read request body: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pipe.mu.Lock()
+		if r.URL.Query().Get("mode") == "append" {
+			pipe.data = append(pipe.data, body...)
+		} else {
+			pipe.data = body
+		}
+		pipe.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("GET /pipe/status", func(w http.ResponseWriter, r *http.Request) {
+		pipe.mu.Lock()
+		empty := len(pipe.data) == 0
+		pipe.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if empty {
+			fmt.Fprintln(w, `{"empty":true}`)
+		} else {
+			fmt.Fprintln(w, `{"empty":false}`)
+		}
+	})
+
+	mux.HandleFunc("GET /pipe", func(w http.ResponseWriter, r *http.Request) {
+		pipe.mu.Lock()
+		data := pipe.data
+		pipe.mu.Unlock()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(data)
+	})
+
 	return accessLog(mux)
 }
 
@@ -1601,6 +1639,237 @@ func TestHandler_ContextIsolation(t *testing.T) {
 			t.Errorf("SubFunc should not exist in default context: status got %d, want %d", resp2.StatusCode, http.StatusNotFound)
 		}
 	})
+}
+
+// ---- /pipe endpoint tests ----
+
+// TestPipe_InitiallyEmpty verifies that GET /pipe/status reports empty before any POST.
+func TestPipe_InitiallyEmpty(t *testing.T) {
+	// Reset global buffer before the test.
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/pipe/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var got map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["empty"] != true {
+		t.Errorf("empty: got %v, want true", got["empty"])
+	}
+}
+
+// TestPipe_PostAndGet verifies that POST /pipe stores content and GET /pipe retrieves it.
+func TestPipe_PostAndGet(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	content := "hello, pipe!"
+
+	// POST content into the pipe.
+	resp, err := http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("POST status: got %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+
+	// GET the content back.
+	resp2, err := http.Get(srv.URL + "/pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("GET status: got %d, want %d", resp2.StatusCode, http.StatusOK)
+	}
+	body, err := io.ReadAll(resp2.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != content {
+		t.Errorf("body: got %q, want %q", string(body), content)
+	}
+}
+
+// TestPipe_StatusNonEmpty verifies that GET /pipe/status reports non-empty after POST.
+func TestPipe_StatusNonEmpty(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	resp2, err := http.Get(srv.URL + "/pipe/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+
+	var got map[string]interface{}
+	if err := json.NewDecoder(resp2.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["empty"] != false {
+		t.Errorf("empty: got %v, want false", got["empty"])
+	}
+}
+
+// TestPipe_OverwriteOnPost verifies that a second POST replaces the buffer content.
+func TestPipe_OverwriteOnPost(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("first"))
+	http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("second"))
+
+	resp, err := http.Get(srv.URL + "/pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "second" {
+		t.Errorf("body: got %q, want %q", string(body), "second")
+	}
+}
+
+// TestPipe_AppendMode verifies that POST /pipe?mode=append appends to the buffer.
+func TestPipe_AppendMode(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("hello"))
+	http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader(", world"))
+
+	resp, err := http.Get(srv.URL + "/pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "hello, world" {
+		t.Errorf("body: got %q, want %q", string(body), "hello, world")
+	}
+}
+
+// TestPipe_AppendModeMultiple verifies that multiple appends accumulate correctly.
+func TestPipe_AppendModeMultiple(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	for _, chunk := range []string{"a", "b", "c"} {
+		http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader(chunk))
+	}
+
+	resp, err := http.Get(srv.URL + "/pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "abc" {
+		t.Errorf("body: got %q, want %q", string(body), "abc")
+	}
+}
+
+// TestPipe_DefaultModeOverwritesAfterAppend verifies that a plain POST (no mode) replaces
+// content even if the buffer was previously built up with appends.
+func TestPipe_DefaultModeOverwritesAfterAppend(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader("old"))
+	http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("new"))
+
+	resp, err := http.Get(srv.URL + "/pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "new" {
+		t.Errorf("body: got %q, want %q", string(body), "new")
+	}
+}
+
+// TestPipe_GetEmptyBuffer verifies that GET /pipe on an empty buffer returns 200 with empty body.
+func TestPipe_GetEmptyBuffer(t *testing.T) {
+	pipe.mu.Lock()
+	pipe.data = nil
+	pipe.mu.Unlock()
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != 0 {
+		t.Errorf("expected empty body, got %q", string(body))
+	}
 }
 
 // ---- MarshalJSON tests ----
