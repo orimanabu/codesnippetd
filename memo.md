@@ -9552,3 +9552,137 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ✻ Crunched for 1m 0s
 ```
+
+```
+❯ Visual Studio Codeのextensionで、「マウスで選択した範囲を `http://localhost:8999`
+にPOSTする」という拡張を作ってください。UIとしてどいう操作がいいかも考えてください(例えばマウスで選択して右クリックすると「codesnippetdに送る」というメニュー項目を追加する等)。送
+り先のホスト、ポート番号は変数化してカスタマイズできるようにしてください。ファイルはvscodeサブフォルダを作ってそこに配置して
+
+⏺ UI と実装を設計してから作ります。
+
+  UI 設計:
+  - テキストを選択して右クリック → "Send Selection to codesnippetd"（editorHasSelection のときのみ表示）
+  - コマンドパレット: codesnippetd: Send Selection to Pipe
+  - 送信成功/失敗は画面下部のトースト通知で表示
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Write(vscode/package.json)
+  ⎿  Wrote 58 lines to vscode/package.json
+       1 {
+       2   "name": "codesnippetd",
+       3   "displayName": "codesnippetd",
+       4   "description": "Send text selections to the codesnippetd /pipe endpoint",
+       5   "version": "0.0.1",
+       6   "engines": {
+       7     "vscode": "^1.85.0"
+       8   },
+       9   "categories": [
+      10     "Other"
+     … +48 lines (ctrl+o to expand)
+
+⏺ Write(vscode/tsconfig.json)
+  ⎿  Wrote 16 lines to vscode/tsconfig.json
+       1 {
+       2   "compilerOptions": {
+       3     "module": "commonjs",
+       4     "target": "ES2020",
+       5     "lib": ["ES2020"],
+       6     "outDir": "out",
+       7     "rootDir": "src",
+       8     "strict": true,
+       9     "sourceMap": true,
+      10     "esModuleInterop": true
+     … +6 lines (ctrl+o to expand)
+
+⏺ Write(vscode/.vscodeignore)
+  ⎿  Wrote 6 lines to vscode/.vscodeignore
+      1 .vscode/**
+      2 node_modules/**
+      3 src/**
+      4 tsconfig.json
+      5 **/*.map
+      6 **/*.ts
+
+⏺ Write(vscode/src/extension.ts)
+  ⎿  Wrote 69 lines to vscode/src/extension.ts
+       1 import * as vscode from 'vscode';
+       2 import * as http from 'http';
+       3
+       4 export function activate(context: vscode.ExtensionContext): void {
+       5     const disposable = vscode.commands.registerCommand(
+       6         'codesnippetd.sendSelection',
+       7         async () => {
+       8             const editor = vscode.window.activeTextEditor;
+       9             if (!editor) {
+      10                 vscode.window.showErrorMessage('codesnippetd: No active editor.');
+     … +59 lines (ctrl+o to expand)
+
+⏺ TypeScript をコンパイルして確認します。
+
+⏺ Bash(cd /Users/ori/devel/src/github.com/orimanabu/codesnippetd/vscode && npm install 2>&1)
+  ⎿  added 4 packages, and audited 5 packages in 1s
+
+     found 0 vulnerabilities
+
+⏺ Bash(npm run compile 2>&1)
+  ⎿  > codesnippetd@0.0.1 compile
+     > tsc -p ./
+
+⏺ エラーなし。生成物を確認します。
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ 正常にコンパイルできました。ファイル構成を確認します。
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ vscode/ 以下に extension を作成しました。
+
+  ---
+  使い方
+
+  インストール
+
+  cd vscode
+  npm install
+  npm run compile
+
+  VS Code で F5 を押すと Extension Development Host が起動して動作確認できます。または vscode/ フォルダを ~/.vscode/extensions/codesnippetd/ にコピーして再起動。
+
+  UI 操作
+
+  ┌───────────────────────────────────────────────────────────────────────┬──────────────────────────┐
+  │                                 操作                                  │           動作           │
+  ├───────────────────────────────────────────────────────────────────────┼──────────────────────────┤
+  │ テキスト選択 → 右クリック → Send Selection to codesnippetd            │ 選択範囲を /pipe に POST │
+  ├───────────────────────────────────────────────────────────────────────┼──────────────────────────┤
+  │ コマンドパレット (Cmd+Shift+P) → codesnippetd: Send Selection to Pipe │ 同上                     │
+  └───────────────────────────────────────────────────────────────────────┴──────────────────────────┘
+
+  右クリックメニューは editorHasSelection の条件付きなので、テキストを選択しているときのみ表示されます。
+
+  カスタマイズ
+
+  VS Code の設定 (settings.json) で変更できます:
+
+  {
+    "codesnippetd.host": "192.168.1.10",
+    "codesnippetd.port": 9000
+  }
+
+  ┌───────────────────┬─────────────┬──────────────────────┐
+  │     設定キー      │ デフォルト  │         説明         │
+  ├───────────────────┼─────────────┼──────────────────────┤
+  │ codesnippetd.host │ "localhost" │ サーバのホスト名     │
+  ├───────────────────┼─────────────┼──────────────────────┤
+  │ codesnippetd.port │ 8999        │ ポート番号 (1–65535) │
+  └───────────────────┴─────────────┴──────────────────────┘
+
+  実装メモ:
+  - Node.js 組み込みの http モジュールを使用（外部依存なし）
+  - 送信成功/失敗は VS Code 右下のトースト通知で表示
+  - UTF-8 エンコードして Content-Type: application/octet-stream で送信
+
+✻ Cooked for 1m 21s
+```
