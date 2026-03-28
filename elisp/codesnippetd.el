@@ -4,8 +4,9 @@
 ;; Keywords: tools
 
 ;;; Commentary:
-;; Provides a command to POST the current buffer's content to the
-;; codesnippetd /pipe endpoint.
+;; Provides a command to POST text to the codesnippetd /pipe endpoint.
+;; If the region is active, the selected text is sent; otherwise the
+;; most recent kill-ring entry is sent.
 
 ;;; Code:
 
@@ -31,11 +32,16 @@
   (format "http://%s:%d/pipe" codesnippetd-host codesnippetd-port))
 
 ;;;###autoload
-(defun codesnippetd-post-buffer ()
-  "POST the current buffer's content to the codesnippetd /pipe endpoint."
+(defun codesnippetd-post-region-or-kill ()
+  "POST to the codesnippetd /pipe endpoint.
+If the region is active, send the text between mark and point.
+Otherwise, send the contents of the kill ring (most recent yank)."
   (interactive)
   (let* ((url (codesnippetd--pipe-url))
-         (content (buffer-string))
+         (content (if (use-region-p)
+                      (buffer-substring-no-properties (region-beginning) (region-end))
+                    (or (car kill-ring)
+                        (user-error "codesnippetd: kill ring is empty"))))
          (url-request-method "POST")
          (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
          (url-request-data (encode-coding-string content 'utf-8)))
@@ -44,7 +50,7 @@
      (lambda (status)
        (if (plist-get status :error)
            (message "codesnippetd: POST failed: %s" (plist-get status :error))
-         (message "codesnippetd: buffer posted to %s" url)))
+         (message "codesnippetd: sent to %s" url)))
      nil
      t)))
 

@@ -9758,3 +9758,73 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
   vim/ はソースファイル（.vim）のみで生成物がないため、追加エントリは不要です。
 ```
+
+```
+❯ elispについて、今はカレントバッファ全体を/pipeに送っていますが、これを「markとカーソルの間で選択範囲があるならそこを、そうでないならyankバッファの内容を送信」という動きに変えて
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 9 lines, removed 4 lines
+      31    (format "http://%s:%d/pipe" codesnippetd-host codesnippetd-port))
+      32
+      33  ;;;###autoload
+      34 -(defun codesnippetd-post-buffer ()
+      35 -  "POST the current buffer's content to the codesnippetd /pipe endpoint."
+      34 +(defun codesnippetd-post-region-or-kill ()
+      35 +  "POST to the codesnippetd /pipe endpoint.
+      36 +If the region is active, send the text between mark and point.
+      37 +Otherwise, send the contents of the kill ring (most recent yank)."
+      38    (interactive)
+      39    (let* ((url (codesnippetd--pipe-url))
+      38 -         (content (buffer-string))
+      40 +         (content (if (use-region-p)
+      41 +                      (buffer-substring-no-properties (region-beginning) (region-end))
+      42 +                    (or (car kill-ring)
+      43 +                        (user-error "codesnippetd: kill ring is empty"))))
+      44           (url-request-method "POST")
+      45           (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
+      46           (url-request-data (encode-coding-string content 'utf-8)))
+     ...
+      49       (lambda (status)
+      50         (if (plist-get status :error)
+      51             (message "codesnippetd: POST failed: %s" (plist-get status :error))
+      47 -         (message "codesnippetd: buffer posted to %s" url)))
+      52 +         (message "codesnippetd: sent to %s" url)))
+      53       nil
+      54       t)))
+      55
+
+⏺ Commentaryも更新します。
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 3 lines, removed 2 lines
+       4  ;; Keywords: tools
+       5
+       6  ;;; Commentary:
+       7 -;; Provides a command to POST the current buffer's content to the
+       8 -;; codesnippetd /pipe endpoint.
+       7 +;; Provides a command to POST text to the codesnippetd /pipe endpoint.
+       8 +;; If the region is active, the selected text is sent; otherwise the
+       9 +;; most recent kill-ring entry is sent.
+      10
+      11  ;;; Code:
+      12
+
+⏺ バイトコンパイルで確認します。
+
+⏺ Bash(emacs --batch --eval '(byte-compile-file "elisp/codesnippetd.el")' 2>&1 && rm -f elisp/codesnippetd.elc)
+  ⎿  (No output)
+
+⏺ 警告なし。完成したファイルを確認します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ 変更内容:
+
+  - 関数名: codesnippetd-post-buffer → codesnippetd-post-region-or-kill
+  - 送信内容の決定ロジック:
+    - (use-region-p) が真（リージョンが active）→ buffer-substring-no-properties でマークとカーソル間のテキストを取得
+    - リージョンなし → (car kill-ring) で最新の kill ring エントリを使用
+    - kill ring が空の場合は user-error でユーザーに通知して中断
+```
