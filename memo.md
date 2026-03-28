@@ -9491,3 +9491,64 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ✻ Worked for 44s
 ```
+
+```
+❯ vim-scriptで、「バッファの内容を `http://localhost:8999`
+にPOSTする」という関数を作ってください。送り先のホスト、ポート番号は変数化してカスタマイズできるようにしてください。ファイルはvimサブフォルダを作ってそこに配置して
+
+⏺ Write(vim/codesnippetd.vim)
+  ⎿  Wrote 66 lines to vim/codesnippetd.vim
+       1 " codesnippetd.vim - Client for codesnippetd /pipe endpoint
+       2 " Place this file in ~/.vim/plugin/ or source it from your vimrc.
+       3
+       4 if exists('g:loaded_codesnippetd')
+       5   finish
+       6 endif
+       7 let g:loaded_codesnippetd = 1
+       8
+       9 " Host and port of the codesnippetd server.
+      10 " Override in your vimrc before sourcing this file, e.g.:
+     … +56 lines (ctrl+o to expand)
+
+⏺ 構文チェックします。
+
+⏺ Bash(vim --not-a-term -es -c 'source vim/codesnippetd.vim | qall!' 2>&1; echo "exit: $?")
+  ⎿  exit: 0
+
+⏺ エラーなし。vim/codesnippetd.vim を作成しました。
+
+  ---
+  使い方
+
+  ~/.vim/plugin/ にコピーするか、vimrc で source します:
+
+  source /path/to/codesnippetd/vim/codesnippetd.vim
+
+  コマンド:
+
+  ┌─────────────────────────┬─────────────────────────────────────────┐
+  │        コマンド         │                  説明                   │
+  ├─────────────────────────┼─────────────────────────────────────────┤
+  │ :CodesnippetdPostBuffer │ 現在のバッファ内容を /pipe に POST する │
+  └─────────────────────────┴─────────────────────────────────────────┘
+
+  カスタマイズ変数 (source より前に設定):
+
+  ┌─────────────────────┬─────────────┬──────────────────┐
+  │        変数         │ デフォルト  │       説明       │
+  ├─────────────────────┼─────────────┼──────────────────┤
+  │ g:codesnippetd_host │ "localhost" │ サーバのホスト名 │
+  ├─────────────────────┼─────────────┼──────────────────┤
+  │ g:codesnippetd_port │ 8999        │ ポート番号       │
+  └─────────────────────┴─────────────┴──────────────────┘
+
+  let g:codesnippetd_host = '192.168.1.10'
+  let g:codesnippetd_port = 9000
+
+  実装メモ:
+  - curl コマンドを使用してリクエストを送信します
+  - Vim 8+ (has('job')) では job_start() による非同期実行、それ以外は system() にフォールバックします
+  - バッファ内容は一時ファイル経由で curl --data-binary に渡すため、バイナリを含むバッファにも対応しています
+
+✻ Crunched for 1m 0s
+```
