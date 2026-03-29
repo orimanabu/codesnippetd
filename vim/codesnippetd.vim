@@ -2,7 +2,6 @@
 " Place this file in ~/.vim/plugin/ or source it from your vimrc.
 "
 " Suggested keymappings (add to your vimrc):
-"   nmap <Leader>cp <Plug>(codesnippetd-post)   " normal mode: send yank buffer
 "   xmap <Leader>cp <Plug>(codesnippetd-post)   " visual mode: send selection
 
 if exists('g:loaded_codesnippetd')
@@ -78,26 +77,15 @@ function! s:VisualSelection() abort
   return l:text
 endfunction
 
-" POST the visual selection or the yank buffer to /pipe.
-" a:visual == 1: called from visual mode  -> send the selection.
-" a:visual == 0: called from normal mode  -> send the unnamed register (@").
-function! s:PostSelectionOrYank(visual) abort
-  if a:visual
-    let l:content = s:VisualSelection()
-    if empty(l:content)
-      echohl WarningMsg
-      echom 'codesnippetd: visual selection is empty'
-      echohl None
-      return
-    endif
-  else
-    let l:content = getreg('"')
-    if empty(l:content)
-      echohl WarningMsg
-      echom 'codesnippetd: yank buffer is empty'
-      echohl None
-      return
-    endif
+" POST the visual selection to /pipe.
+" Must be called from visual mode.
+function! s:PostVisualSelection() abort
+  let l:content = s:VisualSelection()
+  if empty(l:content)
+    echohl WarningMsg
+    echom 'codesnippetd: visual selection is empty'
+    echohl None
+    return
   endif
   call s:Post(l:content)
 endfunction
@@ -119,8 +107,6 @@ endfunction
 " :'<,'>CodesnippetdPost      (visual mode) - send the selected lines
 command! -range CodesnippetdPost call s:PostRange(<line1>, <line2>)
 
-" <Plug>(codesnippetd-post) mappings - bind these in your vimrc:
-"   nmap <Leader>cp <Plug>(codesnippetd-post)
+" <Plug>(codesnippetd-post) mapping - bind this in your vimrc:
 "   xmap <Leader>cp <Plug>(codesnippetd-post)
-nnoremap <silent> <Plug>(codesnippetd-post) :<C-u>call <SID>PostSelectionOrYank(0)<CR>
-xnoremap <silent> <Plug>(codesnippetd-post) :<C-u>call <SID>PostSelectionOrYank(1)<CR>
+xnoremap <silent> <Plug>(codesnippetd-post) :<C-u>call <SID>PostVisualSelection()<CR>

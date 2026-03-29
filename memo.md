@@ -9956,3 +9956,83 @@ claude --resume d2e4f9a7-6f4c-48ad-808f-71fa98d3bf2b
 
 ✻ Brewed for 32s
 ```
+
+```
+❯ vim scriptにおいて、今はvisual modeの選択範囲があればそれを、なければyankバッファの内容を送っていると思いますが、yankバッファの送信はせず、visual
+modeの選択範囲のみ送るように変えてください
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Normal modeのyankバッファ送信を削除し、visual modeのみ対応するよう変更します。
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Removed 1 line
+      2  " Place this file in ~/.vim/plugin/ or source it from your vimrc.
+      3  "
+      4  " Suggested keymappings (add to your vimrc):
+      5 -"   nmap <Leader>cp <Plug>(codesnippetd-post)   " normal mode: send yank buffer
+      5  "   xmap <Leader>cp <Plug>(codesnippetd-post)   " visual mode: send selection
+      6
+      7  if exists('g:loaded_codesnippetd')
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 9 lines, removed 20 lines
+       77    return l:text
+       78  endfunction
+       79
+       80 -" POST the visual selection or the yank buffer to /pipe.
+       81 -" a:visual == 1: called from visual mode  -> send the selection.
+       82 -" a:visual == 0: called from normal mode  -> send the unnamed register (@").
+       83 -function! s:PostSelectionOrYank(visual) abort
+       84 -  if a:visual
+       85 -    let l:content = s:VisualSelection()
+       86 -    if empty(l:content)
+       87 -      echohl WarningMsg
+       88 -      echom 'codesnippetd: visual selection is empty'
+       89 -      echohl None
+       90 -      return
+       91 -    endif
+       92 -  else
+       93 -    let l:content = getreg('"')
+       94 -    if empty(l:content)
+       95 -      echohl WarningMsg
+       96 -      echom 'codesnippetd: yank buffer is empty'
+       97 -      echohl None
+       98 -      return
+       99 -    endif
+       80 +" POST the visual selection to /pipe.
+       81 +" Must be called from visual mode.
+       82 +function! s:PostVisualSelection() abort
+       83 +  let l:content = s:VisualSelection()
+       84 +  if empty(l:content)
+       85 +    echohl WarningMsg
+       86 +    echom 'codesnippetd: visual selection is empty'
+       87 +    echohl None
+       88 +    return
+       89    endif
+       90    call s:Post(l:content)
+       91  endfunction
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 2 lines, removed 4 lines
+      107  " :'<,'>CodesnippetdPost      (visual mode) - send the selected lines
+      108  command! -range CodesnippetdPost call s:PostRange(<line1>, <line2>)
+      109
+      110 -" <Plug>(codesnippetd-post) mappings - bind these in your vimrc:
+      111 -"   nmap <Leader>cp <Plug>(codesnippetd-post)
+      110 +" <Plug>(codesnippetd-post) mapping - bind this in your vimrc:
+      111  "   xmap <Leader>cp <Plug>(codesnippetd-post)
+      113 -nnoremap <silent> <Plug>(codesnippetd-post) :<C-u>call <SID>PostSelectionOrYank(0)<CR>
+      114 -xnoremap <silent> <Plug>(codesnippetd-post) :<C-u>call <SID>PostSelectionOrYank(1)<CR>
+      112 +xnoremap <silent> <Plug>(codesnippetd-post) :<C-u>call <SID>PostVisualSelection()<CR>
+
+⏺ 変更内容を確認します。
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ 変更完了です。以下の3点を修正しました:
+
+  1. s:PostSelectionOrYank(visual) → s:PostVisualSelection() にリネームし、yankバッファを参照するnormal modeの分岐を削除
+  2. nnoremap (normal mode mapping) を削除
+  3. コメントからnormal modeの記述を除去
+```
