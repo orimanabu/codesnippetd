@@ -5,8 +5,7 @@
 
 ;;; Commentary:
 ;; Provides a command to POST text to the codesnippetd /pipe endpoint.
-;; If the region is active, the selected text is sent; otherwise the
-;; most recent kill-ring entry is sent.
+;; The text between mark and point (active region) is sent.
 
 ;;; Code:
 
@@ -32,16 +31,15 @@
   (format "http://%s:%d/pipe" codesnippetd-host codesnippetd-port))
 
 ;;;###autoload
-(defun codesnippetd-post-region-or-kill ()
-  "POST to the codesnippetd /pipe endpoint.
-If the region is active, send the text between mark and point.
-Otherwise, send the contents of the kill ring (most recent yank)."
+(defun codesnippetd-post-region ()
+  "POST the active region to the codesnippetd /pipe endpoint.
+Send the text between mark and point.  Signal an error if the region
+is not active."
   (interactive)
+  (unless (use-region-p)
+    (user-error "codesnippetd: no active region"))
   (let* ((url (codesnippetd--pipe-url))
-         (content (if (use-region-p)
-                      (buffer-substring-no-properties (region-beginning) (region-end))
-                    (or (car kill-ring)
-                        (user-error "codesnippetd: kill ring is empty"))))
+         (content (buffer-substring-no-properties (region-beginning) (region-end)))
          (url-request-method "POST")
          (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
          (url-request-data (encode-coding-string content 'utf-8)))

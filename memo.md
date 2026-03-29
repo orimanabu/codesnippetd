@@ -10036,3 +10036,54 @@ modeの選択範囲のみ送るように変えてください
   2. nnoremap (normal mode mapping) を削除
   3. コメントからnormal modeの記述を除去
 ```
+
+```
+❯ emacs-lispにおいて、今はmarkとカーソルの間の選択範囲があればそれを、なければkill ringの内容を送っていると思いますが、kill
+ringの送信はせず、markとカーソルの選択範囲のみ送るように変えてください
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 1 line, removed 2 lines
+       5
+       6  ;;; Commentary:
+       7  ;; Provides a command to POST text to the codesnippetd /pipe endpoint.
+       8 -;; If the region is active, the selected text is sent; otherwise the
+       9 -;; most recent kill-ring entry is sent.
+       8 +;; The text between mark and point (active region) is sent.
+       9
+      10  ;;; Code:
+      11
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 7 lines, removed 8 lines
+      31    (format "http://%s:%d/pipe" codesnippetd-host codesnippetd-port))
+      32
+      33  ;;;###autoload
+      34 -(defun codesnippetd-post-region-or-kill ()
+      35 -  "POST to the codesnippetd /pipe endpoint.
+      36 -If the region is active, send the text between mark and point.
+      37 -Otherwise, send the contents of the kill ring (most recent yank)."
+      34 +(defun codesnippetd-post-region ()
+      35 +  "POST the active region to the codesnippetd /pipe endpoint.
+      36 +Send the text between mark and point.  Signal an error if the region
+      37 +is not active."
+      38    (interactive)
+      39 +  (unless (use-region-p)
+      40 +    (user-error "codesnippetd: no active region"))
+      41    (let* ((url (codesnippetd--pipe-url))
+      40 -         (content (if (use-region-p)
+      41 -                      (buffer-substring-no-properties (region-beginning) (region-end))
+      42 -                    (or (car kill-ring)
+      43 -                        (user-error "codesnippetd: kill ring is empty"))))
+      42 +         (content (buffer-substring-no-properties (region-beginning) (region-end)))
+      43           (url-request-method "POST")
+      44           (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
+      45           (url-request-data (encode-coding-string content 'utf-8)))
+
+⏺ 変更完了です。以下の3点を修正しました:
+
+  1. 関数名 codesnippetd-post-region-or-kill → codesnippetd-post-region に変更
+  2. kill ringを参照するelse分岐を削除し、regionが非activeならuser-errorを発生させるよう変更
+  3. コメント・docstringをregionのみ送る動作に合わせて更新
+```
