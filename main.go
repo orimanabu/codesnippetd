@@ -91,6 +91,22 @@ func (r *responseRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+// corsMiddleware sets Access-Control-Allow-Origin on every response and handles
+// preflight OPTIONS requests so that browser clients (e.g. canvas.html loaded
+// from a file:// origin) are not blocked by CORS policy.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // accessLog is middleware that logs each request's method, path, status code, and duration.
 // It also logs whether tree-sitter was used to resolve an end line.
 func accessLog(next http.Handler) http.Handler {
@@ -632,7 +648,7 @@ func main() {
 	})
 
 	log.Printf("listening on %s", listenAddr)
-	if err := http.ListenAndServe(listenAddr, accessLog(mux)); err != nil {
+	if err := http.ListenAndServe(listenAddr, corsMiddleware(accessLog(mux))); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

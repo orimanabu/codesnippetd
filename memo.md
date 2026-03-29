@@ -10396,3 +10396,71 @@ ringの送信はせず、markとカーソルの選択範囲のみ送るように
 
 ✻ Baked for 31s
 ```
+
+```
+❯ codesnippetdのダイアログでFetchボタンを押すとCORSエラーが出るようになりました。直してください。ブラウザのエラーメッセージは下記のとおりです：
+- /snippetモードの場合: canvas.html:1 Access to fetch at 'http://localhost:8999/tags/kvm_spinlock_init' from origin 'null' has been blocked by CORS policy: No
+'Access-Control-Allow-Origin' header is present on the requested resource.
+- /pipeモードの場合: canvas.html:1 Access to fetch at 'http://localhost:8999/pipe' from origin 'null' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is
+present on the requested resource.
+
+⏺ サーバー側のGoコードを確認します。
+
+⏺ Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ CORSミドルウェアを accessLog と同様のパターンで追加し、全レスポンスに Access-Control-Allow-Origin: * を付与します。OPTIONSプリフライトリクエストも処理します。
+
+⏺ Update(main.go)
+  ⎿  Added 16 lines
+       91    r.ResponseWriter.WriteHeader(status)
+       92  }
+       93
+       94 +// corsMiddleware sets Access-Control-Allow-Origin on every response and handles
+       95 +// preflight OPTIONS requests so that browser clients (e.g. canvas.html loaded
+       96 +// from a file:// origin) are not blocked by CORS policy.
+       97 +func corsMiddleware(next http.Handler) http.Handler {
+       98 +  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+       99 +    w.Header().Set("Access-Control-Allow-Origin", "*")
+      100 +    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+      101 +    w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+      102 +    if r.Method == http.MethodOptions {
+      103 +      w.WriteHeader(http.StatusNoContent)
+      104 +      return
+      105 +    }
+      106 +    next.ServeHTTP(w, r)
+      107 +  })
+      108 +}
+      109 +
+      110  // accessLog is middleware that logs each request's method, path, status code, and duration.
+      111  // It also logs whether tree-sitter was used to resolve an end line.
+      112  func accessLog(next http.Handler) http.Handler {
+
+⏺ 次に、corsMiddleware をチェーンに追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      648    })
+      649
+      650    log.Printf("listening on %s", listenAddr)
+      651 -  if err := http.ListenAndServe(listenAddr, accessLog(mux)); err != nil {
+      651 +  if err := http.ListenAndServe(listenAddr, corsMiddleware(accessLog(mux))); err != nil {
+      652      log.Fatalf("server error: %v", err)
+      653    }
+      654  }
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ diagnosticの corsMiddleware is unused は古い状態のものです。実際には main 関数で使用しています。ビルドして確認します。
+
+⏺ Bash(go build ./...)
+  ⎿  (No output)
+
+⏺ ビルド成功です。変更内容は以下のとおりです。
+
+  - corsMiddleware を追加。全レスポンスに Access-Control-Allow-Origin: * / Access-Control-Allow-Methods / Access-Control-Allow-Headers を付与し、OPTIONSプリフライトリクエストに 204
+   を返す
+  - main のハンドラチェーンを corsMiddleware(accessLog(mux)) に変更
+
+  これで file:// オリジンからのブラウザリクエストも通るようになります。サーバーを再起動すれば反映されます。
+
+✻ Churned for 44s
+```
