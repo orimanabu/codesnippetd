@@ -5,7 +5,8 @@
 
 ;;; Commentary:
 ;; Provides a command to POST text to the codesnippetd /pipe endpoint.
-;; The text between mark and point (active region) is sent.
+;; The active region (mark to point) is sent as a JSON payload containing
+;; the file path, start/end line numbers, and the selected code.
 
 ;;; Code:
 
@@ -32,17 +33,25 @@
 
 ;;;###autoload
 (defun codesnippetd-post-region ()
-  "POST the active region to the codesnippetd /pipe endpoint.
-Send the text between mark and point.  Signal an error if the region
-is not active."
+  "POST the active region to the codesnippetd /pipe endpoint as JSON.
+Send a JSON object with the file path, start/end line numbers, and the
+selected code.  Signal an error if the region is not active."
   (interactive)
   (unless (use-region-p)
     (user-error "codesnippetd: no active region"))
   (let* ((url (codesnippetd--pipe-url))
-         (content (buffer-substring-no-properties (region-beginning) (region-end)))
+         (code (buffer-substring-no-properties (region-beginning) (region-end)))
+         (path (or (buffer-file-name) ""))
+         (start (line-number-at-pos (region-beginning)))
+         (end (line-number-at-pos (region-end)))
+         (payload (json-encode `(("name"  . "")
+                                 ("path"  . ,path)
+                                 ("start" . ,start)
+                                 ("end"   . ,end)
+                                 ("code"  . ,code))))
          (url-request-method "POST")
-         (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
-         (url-request-data (encode-coding-string content 'utf-8)))
+         (url-request-extra-headers '(("Content-Type" . "application/json")))
+         (url-request-data (encode-coding-string payload 'utf-8)))
     (url-retrieve
      url
      (lambda (status)

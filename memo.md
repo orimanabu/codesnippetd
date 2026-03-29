@@ -10087,3 +10087,222 @@ ringの送信はせず、markとカーソルの選択範囲のみ送るように
   2. kill ringを参照するelse分岐を削除し、regionが非activeならuser-errorを発生させるよう変更
   3. コメント・docstringをregionのみ送る動作に合わせて更新
 ```
+
+```
+❯ vim script、elisp、vscode extensionについて、下記のように動きを変更したいです。
+`/pipe` エンドポイントにHTTP POSTで送る際、選択範囲そのままではなく、次のようなJSONとして送ってください。
+```
+{
+  "name": "",
+  "path": "main.go",
+  "start": 10,
+  "end": 15,
+  "code": "func MyFunc() {\n\treturn 42\n}"
+}
+```
+各キーの意味は次のとおりです。：
+- name: ここは空文字列 `""` を設定してください
+- path: エディタからカレントバッファのパス名を取得し、それを設定してください
+- start: 選択範囲の開始行番号を整数値で指定してください
+- end: 選択範囲の終了行番号を整数値で指定してください
+- code: 選択範囲の文字列をここに設定してください
+
+⏺ まず既存の3ファイルを確認します。
+
+⏺ Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ 3ファイルを並行して更新します。
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 2 lines, removed 2 lines
+      33    endif
+      34  endfunction
+      35
+      36 -" POST a string to the /pipe endpoint.
+      36 +" POST a JSON string to the /pipe endpoint.
+      37  " Uses job_start() for async execution when available; falls back to
+      38  " system() otherwise.
+      39  function! s:Post(content) abort
+     ...
+      44    let l:cmd = [
+      45          \ 'curl', '-s',
+      46          \ '-X', 'POST',
+      47 -        \ '-H', 'Content-Type: application/octet-stream',
+      47 +        \ '-H', 'Content-Type: application/json',
+      48          \ '--data-binary', '@' . l:tmpfile,
+      49          \ l:url,
+      50          \ ]
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 11 lines, removed 4 lines
+       77    return l:text
+       78  endfunction
+       79
+       80 -" POST the visual selection to /pipe.
+       80 +" POST the visual selection to /pipe as JSON.
+       81  " Must be called from visual mode.
+       82  function! s:PostVisualSelection() abort
+       83 -  let l:content = s:VisualSelection()
+       84 -  if empty(l:content)
+       83 +  let l:code = s:VisualSelection()
+       84 +  if empty(l:code)
+       85      echohl WarningMsg
+       86      echom 'codesnippetd: visual selection is empty'
+       87      echohl None
+       88      return
+       89    endif
+       90 -  call s:Post(l:content)
+       90 +  let l:payload = json_encode({
+       91 +        \ 'name':  '',
+       92 +        \ 'path':  expand('%:p'),
+       93 +        \ 'start': line("'<"),
+       94 +        \ 'end':   line("'>"),
+       95 +        \ 'code':  l:code,
+       96 +        \ })
+       97 +  call s:Post(l:payload)
+       98  endfunction
+       99
+      100  " POST lines in [line1, line2] to /pipe.
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 2 lines, removed 1 line
+       5
+       6  ;;; Commentary:
+       7  ;; Provides a command to POST text to the codesnippetd /pipe endpoint.
+       8 -;; The text between mark and point (active region) is sent.
+       8 +;; The active region (mark to point) is sent as a JSON payload containing
+       9 +;; the file path, start/end line numbers, and the selected code.
+      10
+      11  ;;; Code:
+      12
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 14 lines, removed 6 lines
+      33
+      34  ;;;###autoload
+      35  (defun codesnippetd-post-region ()
+      36 -  "POST the active region to the codesnippetd /pipe endpoint.
+      37 -Send the text between mark and point.  Signal an error if the region
+      38 -is not active."
+      36 +  "POST the active region to the codesnippetd /pipe endpoint as JSON.
+      37 +Send a JSON object with the file path, start/end line numbers, and the
+      38 +selected code.  Signal an error if the region is not active."
+      39    (interactive)
+      40    (unless (use-region-p)
+      41      (user-error "codesnippetd: no active region"))
+      42    (let* ((url (codesnippetd--pipe-url))
+      43 -         (content (buffer-substring-no-properties (region-beginning) (region-end)))
+      43 +         (code (buffer-substring-no-properties (region-beginning) (region-end)))
+      44 +         (path (or (buffer-file-name) ""))
+      45 +         (start (line-number-at-pos (region-beginning)))
+      46 +         (end (line-number-at-pos (region-end)))
+      47 +         (payload (json-encode `(("name"  . "")
+      48 +                                 ("path"  . ,path)
+      49 +                                 ("start" . ,start)
+      50 +                                 ("end"   . ,end)
+      51 +                                 ("code"  . ,code))))
+      52           (url-request-method "POST")
+      45 -         (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
+      46 -         (url-request-data (encode-coding-string content 'utf-8)))
+      53 +         (url-request-extra-headers '(("Content-Type" . "application/json")))
+      54 +         (url-request-data (encode-coding-string payload 'utf-8)))
+      55      (url-retrieve
+      56       url
+      57       (lambda (status)
+
+⏺ Update(vscode/src/extension.ts)
+  ⎿  Added 12 lines, removed 1 line
+      18              }
+      19
+      20              const text = editor.document.getText(selection);
+      21 +            const filePath = editor.document.fileName;
+      22 +            const startLine = selection.start.line + 1;
+      23 +            const endLine = selection.end.line + 1;
+      24              const config = vscode.workspace.getConfiguration('codesnippetd');
+      25              const host = config.get<string>('host', 'localhost');
+      26              const port = config.get<number>('port', 8999);
+      27
+      28 +            const payload = JSON.stringify({
+      29 +                name: '',
+      30 +                path: filePath,
+      31 +                start: startLine,
+      32 +                end: endLine,
+      33 +                code: text,
+      34 +            });
+      35 +
+      36              try {
+      26 -                await postToPipe(host, port, text);
+      37 +                await postToPipe(host, port, payload);
+      38                  vscode.window.showInformationMessage(
+      39                      `codesnippetd: Selection sent to http://${host}:${port}/pipe`
+      40                  );
+
+⏺ Update(vscode/src/extension.ts)
+  ⎿  Added 1 line, removed 1 line
+      57                  path: '/pipe',
+      58                  method: 'POST',
+      59                  headers: {
+      60 -                    'Content-Type': 'application/octet-stream',
+      60 +                    'Content-Type': 'application/json',
+      61                      'Content-Length': data.length,
+      62                  },
+      63              },
+
+⏺ 変更完了です。3ファイルの変更内容をまとめます。
+
+  vim (codesnippetd.vim):
+  - s:PostVisualSelection() で expand('%:p') (パス)、line("'<") / line("'>") (行番号) を取得し、json_encode() でJSON化
+  - Content-Type を application/json に変更
+
+  elisp (codesnippetd.el):
+  - buffer-file-name、line-number-at-pos で情報を取得し、json-encode でJSON化
+  - Content-Type を application/json に変更
+
+  VS Code (extension.ts):
+  - editor.document.fileName、selection.start.line + 1 / selection.end.line + 1 で情報を取得し、JSON.stringify でJSON化 (VSCodeの行番号は0-basedなので+1)
+  - Content-Type を application/json に変更
+
+✻ Brewed for 1m 13s
+```
+
+```
+❯ vim scriptで動きを確認しましたが、JSONではなく選択範囲をそのまま送信しています。PostVisualSelectionを呼ぶべきなのにPostRangeを呼んでいるかもしれません。確認して修正してください
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ xnoremap は正しく PostVisualSelection を呼んでいます。問題は CodesnippetdPost コマンドが s:PostRange を呼んでおり、こちらはまだ生テキストを送っていることです。s:PostRange
+  もJSON送信に更新します。
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 11 lines, removed 5 lines
+       97    call s:Post(l:payload)
+       98  endfunction
+       99
+      100 -" POST lines in [line1, line2] to /pipe.
+      100 +" POST lines in [line1, line2] to /pipe as JSON.
+      101  function! s:PostRange(line1, line2) abort
+      102 -  let l:lines = getline(a:line1, a:line2)
+      103 -  let l:content = join(l:lines, "\n")
+      104 -  if empty(l:content)
+      102 +  let l:code = join(getline(a:line1, a:line2), "\n")
+      103 +  if empty(l:code)
+      104      echohl WarningMsg
+      105      echom 'codesnippetd: selection is empty'
+      106      echohl None
+      107      return
+      108    endif
+      110 -  call s:Post(l:content)
+      109 +  let l:payload = json_encode({
+      110 +        \ 'name':  '',
+      111 +        \ 'path':  expand('%:p'),
+      112 +        \ 'start': a:line1,
+      113 +        \ 'end':   a:line2,
+      114 +        \ 'code':  l:code,
+      115 +        \ })
+      116 +  call s:Post(l:payload)
+      117  endfunction
+      118
+      119  " :CodesnippetdPost           (normal mode) - send the current line
+
+⏺ :'<,'>CodesnippetdPost コマンド経由で呼ばれる s:PostRange がJSON未対応だったのが原因でした。s:PostVisualSelection と同じ形式でJSONを構築するよう修正しました。
+```

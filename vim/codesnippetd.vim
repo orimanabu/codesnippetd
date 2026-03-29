@@ -33,7 +33,7 @@ function! s:OnExit(tmpfile, url, job, code) abort
   endif
 endfunction
 
-" POST a string to the /pipe endpoint.
+" POST a JSON string to the /pipe endpoint.
 " Uses job_start() for async execution when available; falls back to
 " system() otherwise.
 function! s:Post(content) abort
@@ -44,7 +44,7 @@ function! s:Post(content) abort
   let l:cmd = [
         \ 'curl', '-s',
         \ '-X', 'POST',
-        \ '-H', 'Content-Type: application/octet-stream',
+        \ '-H', 'Content-Type: application/json',
         \ '--data-binary', '@' . l:tmpfile,
         \ l:url,
         \ ]
@@ -77,30 +77,43 @@ function! s:VisualSelection() abort
   return l:text
 endfunction
 
-" POST the visual selection to /pipe.
+" POST the visual selection to /pipe as JSON.
 " Must be called from visual mode.
 function! s:PostVisualSelection() abort
-  let l:content = s:VisualSelection()
-  if empty(l:content)
+  let l:code = s:VisualSelection()
+  if empty(l:code)
     echohl WarningMsg
     echom 'codesnippetd: visual selection is empty'
     echohl None
     return
   endif
-  call s:Post(l:content)
+  let l:payload = json_encode({
+        \ 'name':  '',
+        \ 'path':  expand('%:p'),
+        \ 'start': line("'<"),
+        \ 'end':   line("'>"),
+        \ 'code':  l:code,
+        \ })
+  call s:Post(l:payload)
 endfunction
 
-" POST lines in [line1, line2] to /pipe.
+" POST lines in [line1, line2] to /pipe as JSON.
 function! s:PostRange(line1, line2) abort
-  let l:lines = getline(a:line1, a:line2)
-  let l:content = join(l:lines, "\n")
-  if empty(l:content)
+  let l:code = join(getline(a:line1, a:line2), "\n")
+  if empty(l:code)
     echohl WarningMsg
     echom 'codesnippetd: selection is empty'
     echohl None
     return
   endif
-  call s:Post(l:content)
+  let l:payload = json_encode({
+        \ 'name':  '',
+        \ 'path':  expand('%:p'),
+        \ 'start': a:line1,
+        \ 'end':   a:line2,
+        \ 'code':  l:code,
+        \ })
+  call s:Post(l:payload)
 endfunction
 
 " :CodesnippetdPost           (normal mode) - send the current line

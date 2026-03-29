@@ -18,12 +18,23 @@ export function activate(context: vscode.ExtensionContext): void {
             }
 
             const text = editor.document.getText(selection);
+            const filePath = editor.document.fileName;
+            const startLine = selection.start.line + 1;
+            const endLine = selection.end.line + 1;
             const config = vscode.workspace.getConfiguration('codesnippetd');
             const host = config.get<string>('host', 'localhost');
             const port = config.get<number>('port', 8999);
 
+            const payload = JSON.stringify({
+                name: '',
+                path: filePath,
+                start: startLine,
+                end: endLine,
+                code: text,
+            });
+
             try {
-                await postToPipe(host, port, text);
+                await postToPipe(host, port, payload);
                 vscode.window.showInformationMessage(
                     `codesnippetd: Selection sent to http://${host}:${port}/pipe`
                 );
@@ -46,7 +57,7 @@ function postToPipe(host: string, port: number, body: string): Promise<void> {
                 path: '/pipe',
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/octet-stream',
+                    'Content-Type': 'application/json',
                     'Content-Length': data.length,
                 },
             },
