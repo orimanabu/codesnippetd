@@ -10306,3 +10306,93 @@ ringの送信はせず、markとカーソルの選択範囲のみ送るように
 
 ⏺ :'<,'>CodesnippetdPost コマンド経由で呼ばれる s:PostRange がJSON未対応だったのが原因でした。s:PostVisualSelection と同じ形式でJSONを構築するよう修正しました。
 ```
+
+```
+❯ `/pipe` でJSONを返すように変更した内容を、README.mdに反映してください
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ POST /pipe と GET /pipe のセクションをJSON仕様に合わせて更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 18 lines, removed 11 lines
+      258  POST /pipe
+      259  ```
+      260
+      261 -Stores the raw request body in the in-memory pipe buffer. By default the buffer is replaced; pass `?mode=append` to append instead.
+      261 +Stores a JSON snippet object in the in-memory pipe buffer. By default the buffer is replaced; pass `?mode=append` to append instead.
+      262
+      263  **Query Parameters**
+      264
+     ...
+      268
+      269  **Request Body**
+      270
+      271 -Any content. The body is stored as-is.
+      271 +A JSON object with the following fields:
+      272
+      273 +| Field | Type | Description |
+      274 +|-------|------|-------------|
+      275 +| `name` | string | Tag name (may be empty) |
+      276 +| `path` | string | Source file path |
+      277 +| `start` | number | Start line of the selection (1-based, inclusive) |
+      278 +| `end` | number | End line of the selection (1-based, inclusive) |
+      279 +| `code` | string | Selected source code |
+      280 +
+      281  **Responses**
+      282
+      283  | Status | Description |
+     ...
+      289
+      290  ```
+      291  POST /pipe
+      284 -Content-Type: text/plain
+      292 +Content-Type: application/json
+      293
+      286 -hello, world
+      294 +{
+      295 +  "name": "",
+      296 +  "path": "main.go",
+      297 +  "start": 10,
+      298 +  "end": 15,
+      299 +  "code": "func MyFunc() {\n\treturn 42\n}"
+      300 +}
+      301  ```
+      302
+      289 -```
+      290 -POST /pipe?mode=append
+      291 -Content-Type: text/plain
+      292 -
+      293 - appended text
+      294 -```
+      295 -
+      303  ---
+      304
+      305  ### Read from the Pipe Buffer
+
+⏺ Update(README.md)
+  ⎿  Added 2 lines, removed 2 lines
+      322  GET /pipe
+      323  ```
+      324
+      325 +```json
+      326 +{"name":"","path":"main.go","start":10,"end":15,"code":"func MyFunc() {\n\treturn 42\n}"}
+      327  ```
+      326 -hello, world
+      327 -```
+      328
+      329  ---
+      330
+
+⏺ 更新完了です。変更箇所は以下のとおりです。
+
+  POST /pipe:
+  - 説明文を「JSONスニペットオブジェクトを格納する」に変更
+  - リクエストボディのフィールド説明テーブル (name, path, start, end, code) を追加
+  - Content-Type を application/json に変更し、JSONのサンプルを追記
+
+  GET /pipe:
+  - レスポンス例をJSONに変更
+
+✻ Baked for 31s
+```

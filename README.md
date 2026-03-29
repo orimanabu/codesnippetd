@@ -258,7 +258,7 @@ GET /lines/MyFunc?context=myproject
 POST /pipe
 ```
 
-Stores the raw request body in the in-memory pipe buffer. By default the buffer is replaced; pass `?mode=append` to append instead.
+Stores a JSON snippet object in the in-memory pipe buffer. By default the buffer is replaced; pass `?mode=append` to append instead.
 
 **Query Parameters**
 
@@ -268,7 +268,15 @@ Stores the raw request body in the in-memory pipe buffer. By default the buffer 
 
 **Request Body**
 
-Any content. The body is stored as-is.
+A JSON object with the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Tag name (may be empty) |
+| `path` | string | Source file path |
+| `start` | number | Start line of the selection (1-based, inclusive) |
+| `end` | number | End line of the selection (1-based, inclusive) |
+| `code` | string | Selected source code |
 
 **Responses**
 
@@ -281,16 +289,15 @@ Any content. The body is stored as-is.
 
 ```
 POST /pipe
-Content-Type: text/plain
+Content-Type: application/json
 
-hello, world
-```
-
-```
-POST /pipe?mode=append
-Content-Type: text/plain
-
- appended text
+{
+  "name": "",
+  "path": "main.go",
+  "start": 10,
+  "end": 15,
+  "code": "func MyFunc() {\n\treturn 42\n}"
+}
 ```
 
 ---
@@ -315,8 +322,8 @@ Returns the current contents of the in-memory pipe buffer. Returns an empty body
 GET /pipe
 ```
 
-```
-hello, world
+```json
+{"name":"","path":"main.go","start":10,"end":15,"code":"func MyFunc() {\n\treturn 42\n}"}
 ```
 
 ---
