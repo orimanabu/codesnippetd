@@ -135,36 +135,70 @@ type TagsDB struct {
 
 // parseLine parses a single line from a ctags file (extended format).
 // Format: tagname TAB filename TAB address ;" TAB [fields...]
+//
+// The address field (column 3) may itself contain tab characters when the
+// search pattern spans indented source lines. To handle this correctly we
+// locate the field boundaries manually: tagname and filename are delimited
+// by the first two literal tabs, and the address ends at the first `;"` that
+// is immediately followed by a tab or the end of the line.
 func parseLine(line string) (Tag, bool) {
 	// Skip comment/metadata lines
 	if strings.HasPrefix(line, "!_TAG_") || line == "" {
 		return Tag{}, false
 	}
 
-	parts := strings.Split(line, "\t")
-	if len(parts) < 3 {
+	// Extract tagname (field 1): up to the first tab.
+	tab1 := strings.Index(line, "\t")
+	if tab1 == -1 {
 		return Tag{}, false
 	}
+	tagName := line[:tab1]
+
+	// Extract filename (field 2): between the first and second tab.
+	rest := line[tab1+1:]
+	tab2 := strings.Index(rest, "\t")
+	if tab2 == -1 {
+		return Tag{}, false
+	}
+	fileName := rest[:tab2]
+
+	// The address (field 3) begins here and may contain embedded tabs
+	// (e.g. a search pattern for an indented line).  It ends at `;"` which
+	// is followed by either a tab (more extension fields) or end-of-string.
+	addrAndRest := rest[tab2+1:]
 
 	tag := Tag{
 		Type:  "tag",
-		Name:  parts[0],
-		Path:  parts[1],
+		Name:  tagName,
+		Path:  fileName,
 		Extra: make(map[string]string),
 	}
 
-	// parts[2] is the address (pattern or line number), optionally followed by ;"
-	addr := parts[2]
-	if idx := strings.Index(addr, ";\""); idx != -1 {
-		addr = addr[:idx]
+	var addr, extensionFields string
+	if sepIdx := strings.Index(addrAndRest, ";\"\t"); sepIdx != -1 {
+		// `;"` followed by a tab: extension fields follow.
+		addr = addrAndRest[:sepIdx]
+		extensionFields = addrAndRest[sepIdx+3:] // skip `;"` + tab
+	} else if strings.HasSuffix(addrAndRest, ";\"") {
+		// `;"` at end of line: no extension fields.
+		addr = addrAndRest[:len(addrAndRest)-2]
+	} else {
+		// No `;"` separator: the address is the next tab-delimited token (e.g. a
+		// bare line number), and any remaining tokens are extension fields.
+		if tabIdx := strings.Index(addrAndRest, "\t"); tabIdx != -1 {
+			addr = addrAndRest[:tabIdx]
+			extensionFields = addrAndRest[tabIdx+1:]
+		} else {
+			addr = addrAndRest
+		}
 	}
 	addr = strings.TrimSpace(addr)
 
-	// Determine if address is a line number or a search pattern
+	// Determine if address is a line number or a search pattern.
 	if n, err := strconv.Atoi(addr); err == nil {
 		tag.Line = n
 	} else {
-		// Strip leading / and trailing / or ?...? delimiters used in ctags patterns
+		// Strip leading / and trailing / or ?...? delimiters used in ctags patterns.
 		pattern := addr
 		if (strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/")) ||
 			(strings.HasPrefix(pattern, "?") && strings.HasSuffix(pattern, "?")) {
@@ -173,8 +207,8 @@ func parseLine(line string) (Tag, bool) {
 		tag.Pattern = pattern
 	}
 
-	// Parse extension fields (tab-separated key:value pairs after the address field)
-	for _, field := range parts[3:] {
+	// Parse extension fields (tab-separated key:value pairs after the address field).
+	for _, field := range strings.Split(extensionFields, "\t") {
 		if field == "" {
 			continue
 		}

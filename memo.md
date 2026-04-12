@@ -10464,3 +10464,206 @@ present on the requested resource.
 
 ✻ Churned for 44s
 ```
+
+```
+❯ readtagsの出力をパースするparseLine()の修正をお願いします。tagsファイルの3カラム目、Tag.Patternにタブ('\t')が含まれる場合にparseに失敗しています。この場合もうまくparseできるよう
+にしてください。失敗する例を `/Users/ori/devel/src/github.com/containers/podman/tags.parse_error` として配置したので参照してください
+
+  Searched for 2 patterns, read 2 files (ctrl+o to expand)
+
+⏺ Now let me look at the test file and the Tag struct to fully understand the format:
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ 問題が明確になりました。パターン /^   run() (*machineSession, error)$/ 内にタブが含まれているため、strings.Split(line, "\t") で誤分割されています。
+
+  修正方針:
+  - フィールド1・2（tagname, filename）は最初の2つのタブで分割
+  - フィールド3（address）は ;\"\t または行末の ;\"" を区切り文字として探し、その間の文字列全体（タブ含む）をaddressとして取得
+
+⏺ Update(main.go)
+  ⎿  Added 40 lines, removed 12 lines
+      135
+      136  // parseLine parses a single line from a ctags file (extended format).
+      137  // Format: tagname TAB filename TAB address ;" TAB [fields...]
+      138 +//
+      139 +// The address field (column 3) may itself contain tab characters when the
+      140 +// search pattern spans indented source lines. To handle this correctly we
+      141 +// locate the field boundaries manually: tagname and filename are delimited
+      142 +// by the first two literal tabs, and the address ends at the first `;"` that
+      143 +// is immediately followed by a tab or the end of the line.
+      144  func parseLine(line string) (Tag, bool) {
+      145    // Skip comment/metadata lines
+      146    if strings.HasPrefix(line, "!_TAG_") || line == "" {
+      147      return Tag{}, false
+      148    }
+      149
+      144 -  parts := strings.Split(line, "\t")
+      145 -  if len(parts) < 3 {
+      150 +  // Extract tagname (field 1): up to the first tab.
+      151 +  tab1 := strings.Index(line, "\t")
+      152 +  if tab1 == -1 {
+      153      return Tag{}, false
+      154    }
+      155 +  tagName := line[:tab1]
+      156
+      157 +  // Extract filename (field 2): between the first and second tab.
+      158 +  rest := line[tab1+1:]
+      159 +  tab2 := strings.Index(rest, "\t")
+      160 +  if tab2 == -1 {
+      161 +    return Tag{}, false
+      162 +  }
+      163 +  fileName := rest[:tab2]
+      164 +
+      165 +  // The address (field 3) begins here and may contain embedded tabs
+      166 +  // (e.g. a search pattern for an indented line).  It ends at `;"` which
+      167 +  // is followed by either a tab (more extension fields) or end-of-string.
+      168 +  addrAndRest := rest[tab2+1:]
+      169 +
+      170    tag := Tag{
+      171      Type:  "tag",
+      151 -    Name:  parts[0],
+      152 -    Path:  parts[1],
+      172 +    Name:  tagName,
+      173 +    Path:  fileName,
+      174      Extra: make(map[string]string),
+      175    }
+      176
+      156 -  // parts[2] is the address (pattern or line number), optionally followed by ;"
+      157 -  addr := parts[2]
+      158 -  if idx := strings.Index(addr, ";\""); idx != -1 {
+      159 -    addr = addr[:idx]
+      177 +  var addr, extensionFields string
+      178 +  if sepIdx := strings.Index(addrAndRest, ";\"\t"); sepIdx != -1 {
+      179 +    // `;"` followed by a tab: extension fields follow.
+      180 +    addr = addrAndRest[:sepIdx]
+      181 +    extensionFields = addrAndRest[sepIdx+3:] // skip `;"` + tab
+      182 +  } else if strings.HasSuffix(addrAndRest, ";\"") {
+      183 +    // `;"` at end of line: no extension fields.
+      184 +    addr = addrAndRest[:len(addrAndRest)-2]
+      185 +  } else {
+      186 +    // No `;"` separator: treat the remainder as the address (legacy format).
+      187 +    addr = addrAndRest
+      188    }
+      189    addr = strings.TrimSpace(addr)
+      190
+      163 -  // Determine if address is a line number or a search pattern
+      191 +  // Determine if address is a line number or a search pattern.
+      192    if n, err := strconv.Atoi(addr); err == nil {
+      193      tag.Line = n
+      194    } else {
+      167 -    // Strip leading / and trailing / or ?...? delimiters used in ctags patterns
+      195 +    // Strip leading / and trailing / or ?...? delimiters used in ctags patterns.
+      196      pattern := addr
+      197      if (strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/")) ||
+      198        (strings.HasPrefix(pattern, "?") && strings.HasSuffix(pattern, "?")) {
+     ...
+      201      tag.Pattern = pattern
+      202    }
+      203
+      176 -  // Parse extension fields (tab-separated key:value pairs after the address field)
+      177 -  for _, field := range parts[3:] {
+      204 +  // Parse extension fields (tab-separated key:value pairs after the address field).
+      205 +  for _, field := range strings.Split(extensionFields, "\t") {
+      206      if field == "" {
+      207        continue
+      208      }
+
+⏺ 次に、このケースをカバーするテストを追加します:
+
+  Read 1 file (ctrl+o to expand)
+  ⎿  Found 8 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 30 lines
+      107    }
+      108  }
+      109
+      110 +func TestParseLine_PatternWithEmbeddedTab(t *testing.T) {
+      111 +  // Pattern field contains a literal tab (e.g. an indented method signature).
+      112 +  // Real-world example from a Go interface tags file:
+      113 +  //   run\tpkg/machine/e2e/config_test.go\t/^       run() (*machineSession, error)$/;"\tn\tinterface:...
+      114 +  line := "run\tpkg/machine/e2e/config_test.go\t/^\trun() (*machineSession, error)$/;\"\tn\tinterface:e2e_test.MachineTestBuilder\ttyperef:typename:(*machineSessi
+          +on, error)"
+      115 +  tag, ok := parseLine(line)
+      116 +  if !ok {
+      117 +    t.Fatal("expected ok=true for pattern with embedded tab")
+      118 +  }
+      119 +  if tag.Name != "run" {
+      120 +    t.Errorf("Name: got %q, want %q", tag.Name, "run")
+      121 +  }
+      122 +  if tag.Path != "pkg/machine/e2e/config_test.go" {
+      123 +    t.Errorf("Path: got %q, want %q", tag.Path, "pkg/machine/e2e/config_test.go")
+      124 +  }
+      125 +  wantPattern := "^\trun() (*machineSession, error)$"
+      126 +  if tag.Pattern != wantPattern {
+      127 +    t.Errorf("Pattern: got %q, want %q", tag.Pattern, wantPattern)
+      128 +  }
+      129 +  if tag.Kind != "n" {
+      130 +    t.Errorf("Kind: got %q, want %q", tag.Kind, "n")
+      131 +  }
+      132 +  if tag.Extra["interface"] != "e2e_test.MachineTestBuilder" {
+      133 +    t.Errorf("Extra[interface]: got %q, want %q", tag.Extra["interface"], "e2e_test.MachineTestBuilder")
+      134 +  }
+      135 +  if tag.Extra["typeref"] != "typename:(*machineSession, error)" {
+      136 +    t.Errorf("Extra[typeref]: got %q, want %q", tag.Extra["typeref"], "typename:(*machineSession, error)")
+      137 +  }
+      138 +}
+      139 +
+      140  // ---- loadTagsFile tests ----
+      141
+      142  func TestLoadTagsFile_NotFound(t *testing.T) {
+
+⏺ Bash(go test ./... -run TestParseLine 2>&1)
+  ⎿  Error: Exit code 1
+     --- FAIL: TestParseLine_LineNumberAddress (0.00s)
+         main_test.go:72: Line: got 0, want 42
+         main_test.go:75: Pattern should be empty when address is a line number, got "42\tkind:variable\tlanguage:Go"
+     FAIL
+     FAIL       github.com/orimanabu/codesnippetd       0.584s
+     FAIL
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ ;" なしのレガシー形式（行番号など）の fallback が誤っています。その場合も次のタブまでをaddressとして扱う必要があります:
+
+⏺ Update(main.go)
+  ⎿  Added 8 lines, removed 2 lines
+      183      // `;"` at end of line: no extension fields.
+      184      addr = addrAndRest[:len(addrAndRest)-2]
+      185    } else {
+      186 -    // No `;"` separator: treat the remainder as the address (legacy format).
+      187 -    addr = addrAndRest
+      186 +    // No `;"` separator: the address is the next tab-delimited token (e.g. a
+      187 +    // bare line number), and any remaining tokens are extension fields.
+      188 +    if tabIdx := strings.Index(addrAndRest, "\t"); tabIdx != -1 {
+      189 +      addr = addrAndRest[:tabIdx]
+      190 +      extensionFields = addrAndRest[tabIdx+1:]
+      191 +    } else {
+      192 +      addr = addrAndRest
+      193 +    }
+      194    }
+      195    addr = strings.TrimSpace(addr)
+      196
+
+⏺ Bash(go test ./... -run TestParseLine 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.571s
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テストも念のため確認します:
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.623s
+
+⏺ 全テスト通過しました。
+
+  変更内容のまとめ:
+
+  parseLine() を strings.Split(line, "\t") での一括分割から、フィールドごとの手動パースに変更しました:
+
+  1. フィールド1・2（tagname, filename）: 最初の2つのタブで分割（従来と同じ）
+  2. フィールド3（address）: ;\"\t（タブ付き）または行末の ;\"" を区切りとして検索し、その手前を address とする。これにより /^  run() (*machineSession, error)$/
+  のようなタブ入りパターンも正しく取得できる
+  3. フォールバック（;" なし）: 次のタブまでを address として扱い、残りを extension fields とする（従来の行番号形式などに対応）
+
+✻ Cogitated for 2m 1s
+```

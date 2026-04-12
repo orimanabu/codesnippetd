@@ -107,6 +107,36 @@ func TestParseLine_TooFewFields(t *testing.T) {
 	}
 }
 
+func TestParseLine_PatternWithEmbeddedTab(t *testing.T) {
+	// Pattern field contains a literal tab (e.g. an indented method signature).
+	// Real-world example from a Go interface tags file:
+	//   run\tpkg/machine/e2e/config_test.go\t/^	run() (*machineSession, error)$/;"\tn\tinterface:...
+	line := "run\tpkg/machine/e2e/config_test.go\t/^\trun() (*machineSession, error)$/;\"\tn\tinterface:e2e_test.MachineTestBuilder\ttyperef:typename:(*machineSession, error)"
+	tag, ok := parseLine(line)
+	if !ok {
+		t.Fatal("expected ok=true for pattern with embedded tab")
+	}
+	if tag.Name != "run" {
+		t.Errorf("Name: got %q, want %q", tag.Name, "run")
+	}
+	if tag.Path != "pkg/machine/e2e/config_test.go" {
+		t.Errorf("Path: got %q, want %q", tag.Path, "pkg/machine/e2e/config_test.go")
+	}
+	wantPattern := "^\trun() (*machineSession, error)$"
+	if tag.Pattern != wantPattern {
+		t.Errorf("Pattern: got %q, want %q", tag.Pattern, wantPattern)
+	}
+	if tag.Kind != "n" {
+		t.Errorf("Kind: got %q, want %q", tag.Kind, "n")
+	}
+	if tag.Extra["interface"] != "e2e_test.MachineTestBuilder" {
+		t.Errorf("Extra[interface]: got %q, want %q", tag.Extra["interface"], "e2e_test.MachineTestBuilder")
+	}
+	if tag.Extra["typeref"] != "typename:(*machineSession, error)" {
+		t.Errorf("Extra[typeref]: got %q, want %q", tag.Extra["typeref"], "typename:(*machineSession, error)")
+	}
+}
+
 // ---- loadTagsFile tests ----
 
 func TestLoadTagsFile_NotFound(t *testing.T) {
