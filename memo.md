@@ -10742,3 +10742,184 @@ present on the requested resource.
 
 ✻ Worked for 50s
 ```
+
+```
+❯ vimプラグインでPOST /pipeするときに送るJSONデータにおいて、pathの値を次のように設定してください：
+1. パスの一番深いディレクトリから順に、`.git`という名前のディレクトリがあるかを探す
+2. .gitが見つかったら、.gitがあるディレクトリ以降をpathの値として設定する
+3. .gitが見つからなかったら、フルパスをpathの値として設定する
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ expand('%:p') でフルパスを取得している箇所が2か所あります（s:PostVisualSelection と s:PostRange）。.git
+  ディレクトリを探してリポジトリ相対パスを返す関数を追加し、両箇所を更新します。
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 18 lines
+      66    endif
+      67  endfunction
+      68
+      69 +" Return a path relative to the nearest git root, or the full path if no
+      70 +" .git directory is found by walking up from the file's directory.
+      71 +function! s:GitRelativePath(fullpath) abort
+      72 +  let l:dir = fnamemodify(a:fullpath, ':h')
+      73 +  while 1
+      74 +    if isdirectory(l:dir . '/.git')
+      75 +      " Return the portion after the git root directory
+      76 +      return strpart(a:fullpath, len(l:dir) + 1)
+      77 +    endif
+      78 +    let l:parent = fnamemodify(l:dir, ':h')
+      79 +    if l:parent ==# l:dir
+      80 +      " Reached filesystem root without finding .git
+      81 +      return a:fullpath
+      82 +    endif
+      83 +    let l:dir = l:parent
+      84 +  endwhile
+      85 +endfunction
+      86 +
+      87  " Return the text of the last visual selection without clobbering registers.
+      88  " Uses register 'a' as a scratch area, saving and restoring its contents.
+      89  function! s:VisualSelection() abort
+
+⏺ 次に、2か所の 'path': expand('%:p') を s:GitRelativePath(expand('%:p')) に置き換えます。
+
+⏺ Update(vim/codesnippetd.vim)
+  ⎿  Added 2 lines, removed 2 lines
+      107    endif
+      108    let l:payload = json_encode({
+      109          \ 'name':  '',
+      110 -        \ 'path':  expand('%:p'),
+      110 +        \ 'path':  s:GitRelativePath(expand('%:p')),
+      111          \ 'start': line("'<"),
+      112          \ 'end':   line("'>"),
+      113          \ 'code':  l:code,
+     ...
+      126    endif
+      127    let l:payload = json_encode({
+      128          \ 'name':  '',
+      129 -        \ 'path':  expand('%:p'),
+      129 +        \ 'path':  s:GitRelativePath(expand('%:p')),
+      130          \ 'start': a:line1,
+      131          \ 'end':   a:line2,
+      132          \ 'code':  l:code,
+
+⏺ 変更を確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 変更内容:
+
+  - s:GitRelativePath() 関数を追加（69-85行）。ファイルのディレクトリからルートに向かって .git ディレクトリを探し、見つかればその git
+  ルート以降の相対パスを返す。見つからなければフルパスを返す。
+  - s:PostVisualSelection() と s:PostRange() の 'path' フィールドで expand('%:p') の代わりに s:GitRelativePath(expand('%:p')) を使用するよう変更。
+
+  例: /Users/ori/devel/src/github.com/orimanabu/codesnippetd/vim/codesnippetd.vim を編集中なら、vim/codesnippetd.vim が path の値として送信されます。
+
+❯ emacs-lispも同様の変更をしてください
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 15 lines
+      31    "Return the URL for the /pipe endpoint."
+      32    (format "http://%s:%d/pipe" codesnippetd-host codesnippetd-port))
+      33
+      34 +(defun codesnippetd--git-relative-path (fullpath)
+      35 +  "Return FULLPATH relative to the nearest git root, or FULLPATH if not found.
+      36 +Walk up the directory tree from FULLPATH looking for a .git directory.
+      37 +If found, return the path portion after the git root.  If not found,
+      38 +return FULLPATH unchanged."
+      39 +  (let ((dir (file-name-directory fullpath)))
+      40 +    (catch 'done
+      41 +      (while t
+      42 +        (if (file-directory-p (expand-file-name ".git" dir))
+      43 +            (throw 'done (file-relative-name fullpath dir))
+      44 +          (let ((parent (file-name-directory (directory-file-name dir))))
+      45 +            (if (string= parent dir)
+      46 +                (throw 'done fullpath)
+      47 +              (setq dir parent)))))))))
+      48 +
+      49  ;;;###autoload
+      50  (defun codesnippetd-post-region ()
+      51    "POST the active region to the codesnippetd /pipe endpoint as JSON.
+
+⏺ Update(elisp/codesnippetd.el)
+  ⎿  Added 2 lines, removed 1 line
+      56      (user-error "codesnippetd: no active region"))
+      57    (let* ((url (codesnippetd--pipe-url))
+      58           (code (buffer-substring-no-properties (region-beginning) (region-end)))
+      59 -         (path (or (buffer-file-name) ""))
+      59 +         (path (let ((f (buffer-file-name)))
+      60 +                 (if f (codesnippetd--git-relative-path f) "")))
+      61           (start (line-number-at-pos (region-beginning)))
+      62           (end (line-number-at-pos (region-end)))
+      63           (payload (json-encode `(("name"  . "")
+
+⏺ 確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 変更内容:
+
+  - codesnippetd--git-relative-path 関数を追加（34-47行）。file-name-directory / directory-file-name でディレクトリを遡りながら .git を探し、見つかれば
+  file-relative-name で相対パスを返す。見つからなければフルパスを返す。
+  - path の取得箇所（59-60行）を buffer-file-name の結果を codesnippetd--git-relative-path に渡すよう変更。buffer-file-name が
+  nil（バッファが未保存）の場合は空文字を返す。
+
+❯ vscode拡張も同じように変更して
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ Update(vscode/src/extension.ts)
+  ⎿  Added 2 lines
+      1  import * as vscode from 'vscode';
+      2  import * as http from 'http';
+      3 +import * as fs from 'fs';
+      4 +import * as path from 'path';
+      5
+      6  export function activate(context: vscode.ExtensionContext): void {
+      7      const disposable = vscode.commands.registerCommand(
+
+⏺ Update(vscode/src/extension.ts)
+  ⎿  Added 14 lines
+      79      });
+      80  }
+      81
+      82 +function gitRelativePath(fullPath: string): string {
+      83 +    let dir = path.dirname(fullPath);
+      84 +    while (true) {
+      85 +        if (fs.existsSync(path.join(dir, '.git')) && fs.statSync(path.join(dir, '.git')).isDirectory()) {
+      86 +            return path.relative(dir, fullPath);
+      87 +        }
+      88 +        const parent = path.dirname(dir);
+      89 +        if (parent === dir) {
+      90 +            return fullPath;
+      91 +        }
+      92 +        dir = parent;
+      93 +    }
+      94 +}
+      95 +
+      96  export function deactivate(): void {}
+
+⏺ Update(vscode/src/extension.ts)
+  ⎿  Added 1 line, removed 1 line
+      20              }
+      21
+      22              const text = editor.document.getText(selection);
+      23 -            const filePath = editor.document.fileName;
+      23 +            const filePath = gitRelativePath(editor.document.fileName);
+      24              const startLine = selection.start.line + 1;
+      25              const endLine = selection.end.line + 1;
+      26              const config = vscode.workspace.getConfiguration('codesnippetd');
+
+⏺ 結果を確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 変更内容:
+
+  - fs と path モジュールをインポートに追加（3-4行）
+  - gitRelativePath() 関数を追加（82-94行）。path.dirname で遡りながら .git ディレクトリを探し、見つかれば path.relative
+  で相対パスを返す。見つからなければフルパスを返す。
+  - filePath の取得（23行）を gitRelativePath(editor.document.fileName) に変更。
+```

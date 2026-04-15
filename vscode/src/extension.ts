@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext): void {
     const disposable = vscode.commands.registerCommand(
@@ -18,7 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
             }
 
             const text = editor.document.getText(selection);
-            const filePath = editor.document.fileName;
+            const filePath = gitRelativePath(editor.document.fileName);
             const startLine = selection.start.line + 1;
             const endLine = selection.end.line + 1;
             const config = vscode.workspace.getConfiguration('codesnippetd');
@@ -75,6 +77,20 @@ function postToPipe(host: string, port: number, body: string): Promise<void> {
         req.write(data);
         req.end();
     });
+}
+
+function gitRelativePath(fullPath: string): string {
+    let dir = path.dirname(fullPath);
+    while (true) {
+        if (fs.existsSync(path.join(dir, '.git')) && fs.statSync(path.join(dir, '.git')).isDirectory()) {
+            return path.relative(dir, fullPath);
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) {
+            return fullPath;
+        }
+        dir = parent;
+    }
 }
 
 export function deactivate(): void {}

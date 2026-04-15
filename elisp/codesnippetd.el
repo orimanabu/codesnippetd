@@ -31,6 +31,21 @@
   "Return the URL for the /pipe endpoint."
   (format "http://%s:%d/pipe" codesnippetd-host codesnippetd-port))
 
+(defun codesnippetd--git-relative-path (fullpath)
+  "Return FULLPATH relative to the nearest git root, or FULLPATH if not found.
+Walk up the directory tree from FULLPATH looking for a .git directory.
+If found, return the path portion after the git root.  If not found,
+return FULLPATH unchanged."
+  (let ((dir (file-name-directory fullpath)))
+    (catch 'done
+      (while t
+        (if (file-directory-p (expand-file-name ".git" dir))
+            (throw 'done (file-relative-name fullpath dir))
+          (let ((parent (file-name-directory (directory-file-name dir))))
+            (if (string= parent dir)
+                (throw 'done fullpath)
+              (setq dir parent)))))))))
+
 ;;;###autoload
 (defun codesnippetd-post-region ()
   "POST the active region to the codesnippetd /pipe endpoint as JSON.
@@ -41,7 +56,8 @@ selected code.  Signal an error if the region is not active."
     (user-error "codesnippetd: no active region"))
   (let* ((url (codesnippetd--pipe-url))
          (code (buffer-substring-no-properties (region-beginning) (region-end)))
-         (path (or (buffer-file-name) ""))
+         (path (let ((f (buffer-file-name)))
+                 (if f (codesnippetd--git-relative-path f) "")))
          (start (line-number-at-pos (region-beginning)))
          (end (line-number-at-pos (region-end)))
          (payload (json-encode `(("name"  . "")

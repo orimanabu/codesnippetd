@@ -66,6 +66,24 @@ function! s:Post(content) abort
   endif
 endfunction
 
+" Return a path relative to the nearest git root, or the full path if no
+" .git directory is found by walking up from the file's directory.
+function! s:GitRelativePath(fullpath) abort
+  let l:dir = fnamemodify(a:fullpath, ':h')
+  while 1
+    if isdirectory(l:dir . '/.git')
+      " Return the portion after the git root directory
+      return strpart(a:fullpath, len(l:dir) + 1)
+    endif
+    let l:parent = fnamemodify(l:dir, ':h')
+    if l:parent ==# l:dir
+      " Reached filesystem root without finding .git
+      return a:fullpath
+    endif
+    let l:dir = l:parent
+  endwhile
+endfunction
+
 " Return the text of the last visual selection without clobbering registers.
 " Uses register 'a' as a scratch area, saving and restoring its contents.
 function! s:VisualSelection() abort
@@ -89,7 +107,7 @@ function! s:PostVisualSelection() abort
   endif
   let l:payload = json_encode({
         \ 'name':  '',
-        \ 'path':  expand('%:p'),
+        \ 'path':  s:GitRelativePath(expand('%:p')),
         \ 'start': line("'<"),
         \ 'end':   line("'>"),
         \ 'code':  l:code,
@@ -108,7 +126,7 @@ function! s:PostRange(line1, line2) abort
   endif
   let l:payload = json_encode({
         \ 'name':  '',
-        \ 'path':  expand('%:p'),
+        \ 'path':  s:GitRelativePath(expand('%:p')),
         \ 'start': a:line1,
         \ 'end':   a:line2,
         \ 'code':  l:code,
