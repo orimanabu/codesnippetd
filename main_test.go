@@ -362,7 +362,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 		pipe.mu.Lock()
 		data := pipe.data
 		pipe.mu.Unlock()
-		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
 
@@ -1730,6 +1730,9 @@ func TestPipe_PostAndGet(t *testing.T) {
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("GET status: got %d, want %d", resp2.StatusCode, http.StatusOK)
+	}
+	if ct := resp2.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type: got %q, want application/json", ct)
 	}
 	body, err := io.ReadAll(resp2.Body)
 	if err != nil {

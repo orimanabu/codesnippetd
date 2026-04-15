@@ -551,7 +551,7 @@ func main() {
 		pipe.mu.Lock()
 		data := pipe.data
 		pipe.mu.Unlock()
-		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
 
