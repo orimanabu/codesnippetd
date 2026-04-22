@@ -518,8 +518,12 @@ func main() {
 	flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
 	port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
 	flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
-	useTreeSitter := flag.Bool("tree-sitter", false, "use tree-sitter to resolve end lines when ctags does not provide them")
+	noTreeSitter := flag.Bool("no-tree-sitter", false, "disable tree-sitter; use ctags parser only")
+	// Kept for backwards compatibility: --tree-sitter is now a no-op since tree-sitter is on by default.
+	_ = flag.Bool("tree-sitter", true, "use tree-sitter to resolve end lines (default; deprecated flag)")
 	flag.Parse()
+
+	useTreeSitter := !*noTreeSitter
 
 	listenAddr := *addr
 	if *port != 0 {
@@ -644,7 +648,7 @@ func main() {
 
 		var snippets []Snippet
 		for _, tag := range results {
-			s, err := snippetForTag(r.Context(), tag, contextDir, *useTreeSitter)
+			s, err := snippetForTag(r.Context(), tag, contextDir, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -681,7 +685,7 @@ func main() {
 
 		var ranges []LineRange
 		for _, tag := range results {
-			lr, err := lineRangeForTag(r.Context(), tag, contextDir, *useTreeSitter)
+			lr, err := lineRangeForTag(r.Context(), tag, contextDir, useTreeSitter)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

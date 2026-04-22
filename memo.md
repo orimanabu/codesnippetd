@@ -11407,3 +11407,98 @@ present on the requested resource.
 
 ✻ Crunched for 1m 0s
 ```
+
+```
+❯ 今は--tree-sitterオプションをつけるとTree
+Sitterによるパーズをします。これを、オプションなしのデフォルト動作にしてください。また、--no-tree-sitterオプションを新設して、このオプションが指定された場合はTree
+Sitterパーザを使わず、ctagsパーザのみを使う動きにしてください
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 3 lines, removed 1 line
+      518    flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
+      519    port := flag.Int("port", 0, "port number to listen on; overrides -addr when set")
+      520    flag.IntVar(port, "p", 0, "port number to listen on (shorthand for -port)")
+      521 -  useTreeSitter := flag.Bool("tree-sitter", false, "use tree-sitter to resolve end lines when ctags does not provide them")
+      521 +  noTreeSitter := flag.Bool("no-tree-sitter", false, "disable tree-sitter; use ctags parser only")
+      522 +  // Kept for backwards compatibility: --tree-sitter is now a no-op since tree-sitter is on by default.
+      523 +  _ = flag.Bool("tree-sitter", true, "use tree-sitter to resolve end lines (default; deprecated flag)")
+      524    flag.Parse()
+      525
+      526    listenAddr := *addr
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      523    _ = flag.Bool("tree-sitter", true, "use tree-sitter to resolve end lines (default; deprecated flag)")
+      524    flag.Parse()
+      525
+      526 +  useTreeSitter := !*noTreeSitter
+      527 +
+      528    listenAddr := *addr
+      529    if *port != 0 {
+      530      listenAddr = fmt.Sprintf(":%d", *port)
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ useTreeSitter が bool になったので、ハンドラ内の *useTreeSitter を useTreeSitter に修正します。
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines, removed 2 lines
+      648
+      649      var snippets []Snippet
+      650      for _, tag := range results {
+      651 -      s, err := snippetForTag(r.Context(), tag, contextDir, *useTreeSitter)
+      651 +      s, err := snippetForTag(r.Context(), tag, contextDir, useTreeSitter)
+      652        if err != nil {
+      653          http.Error(w, err.Error(), http.StatusInternalServerError)
+      654          return
+     ...
+      685
+      686      var ranges []LineRange
+      687      for _, tag := range results {
+      688 -      lr, err := lineRangeForTag(r.Context(), tag, contextDir, *useTreeSitter)
+      688 +      lr, err := lineRangeForTag(r.Context(), tag, contextDir, useTreeSitter)
+      689        if err != nil {
+      690          http.Error(w, err.Error(), http.StatusInternalServerError)
+      691          return
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 次にテストコードを更新します。newHandler(false) の呼び出しは「tree-sitter無効」なので意味が変わります。テスト内の引数の意味を確認して更新します。
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ 既存の newHandler(false) 呼び出しはテストヘルパーでの明示的なパラメータなので変更不要です。テストを実行して確認します。
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.991s
+
+⏺ 変更箇所を確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 完了です。変更内容：
+
+  - --no-tree-sitter フラグを新設。指定するとtree-sitterを無効化してctagsのみ使用
+  - --tree-sitter フラグは後方互換のために残存（デフォルト true、実質no-op）
+  - useTreeSitter を *noTreeSitter の反転から計算するよう変更
+
+  動作まとめ:
+
+  ┌────────────────────┬────────────────────────────┐
+  │   起動オプション   │        tree-sitter         │
+  ├────────────────────┼────────────────────────────┤
+  │ (なし・デフォルト) │ 有効                       │
+  ├────────────────────┼────────────────────────────┤
+  │ --no-tree-sitter   │ 無効                       │
+  ├────────────────────┼────────────────────────────┤
+  │ --tree-sitter      │ 有効（従来と同じ、非推奨） │
+  └────────────────────┴────────────────────────────┘
+
+✻ Sautéed for 1m 7s
+```
