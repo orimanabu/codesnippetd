@@ -567,21 +567,6 @@ func main() {
 		fmt.Fprintln(w, `{"status":"ok"}`)
 	})
 
-	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
-		u, err := user.Current()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to get current user: %v", err), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]string{
-			"user":    u.Username,
-			"homedir": u.HomeDir,
-		}); err != nil {
-			log.Printf("encoding response: %v", err)
-		}
-	})
-
 	mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
