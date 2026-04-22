@@ -116,14 +116,15 @@ func accessLog(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
 		rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		query := r.URL.RawQuery
 		if r.URL.Path == "/pipe" {
-			log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+			log.Printf("%s %s query=%q %d %s", r.Method, r.URL.Path, query, rec.status, time.Since(start))
 		} else {
 			parser := "ctags"
 			if meta.usedTreeSitter {
 				parser = "tree-sitter"
 			}
-			log.Printf("%s %s %d %s parser=%s", r.Method, r.URL.Path, rec.status, time.Since(start), parser)
+			log.Printf("%s %s query=%q %d %s parser=%s", r.Method, r.URL.Path, query, rec.status, time.Since(start), parser)
 		}
 	})
 }

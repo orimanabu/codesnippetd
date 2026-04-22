@@ -11502,3 +11502,36 @@ Sitterパーザを使わず、ctagsパーザのみを使う動きにしてくだ
 
 ✻ Sautéed for 1m 7s
 ```
+
+```
+❯ ログにクエリパラメータを出力して
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ accessLog ミドルウェア (line 112) にクエリパラメータを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 3 lines, removed 2 lines
+      116      r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
+      117      rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+      118      next.ServeHTTP(rec, r)
+      119 +    query := r.URL.RawQuery
+      120      if r.URL.Path == "/pipe" {
+      120 -      log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
+      121 +      log.Printf("%s %s query=%q %d %s", r.Method, r.URL.Path, query, rec.status, time.Since(start))
+      122      } else {
+      123        parser := "ctags"
+      124        if meta.usedTreeSitter {
+      125          parser = "tree-sitter"
+      126        }
+      126 -      log.Printf("%s %s %d %s parser=%s", r.Method, r.URL.Path, rec.status, time.Since(start), parser)
+      127 +      log.Printf("%s %s query=%q %d %s parser=%s", r.Method, r.URL.Path, query, rec.status, time.Since(start), parser)
+      128      }
+      129    })
+      130  }
+
+⏺ ログの出力形式が変わります:
+
+  GET /snippets/myFunc query="context=/path/to/project" 200 1.2ms parser=tree-sitter
+  GET /pipe query="" 204 0.1ms
+```
