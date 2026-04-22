@@ -11716,3 +11716,434 @@ Sitterパーザを使わず、ctagsパーザのみを使う動きにしてくだ
 
 ✻ Churned for 37s
 ```
+
+```
+❯ contextとtagsのクエリパラメータにはパス名が入ります。パス名が `~` で始まっている場合は、codesnippetd実行ユーザーのホームディレクトリに置換して、絶対パスとして処理してください
+
+⏺ 現在のコードを確認してから実装します。
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ 方針:
+  - expandTilde(path string) (string, error) ヘルパーを追加
+  - ハンドラ内でクエリパラメータを読んだ直後に両方を展開する queryTagsPath(r) を追加して、4つのハンドラを一括更新
+
+  main.go に実装します。
+
+⏺ Update(main.go)
+  ⎿  Added 28 lines
+      330    return tagsFileForContext(context)
+      331  }
+      332
+      333 +// expandTilde replaces a leading "~" in path with the current user's home directory.
+      334 +// Paths that do not start with "~" are returned unchanged.
+      335 +func expandTilde(path string) (string, error) {
+      336 +  if !strings.HasPrefix(path, "~") {
+      337 +    return path, nil
+      338 +  }
+      339 +  u, err := user.Current()
+      340 +  if err != nil {
+      341 +    return "", fmt.Errorf("expanding ~: %w", err)
+      342 +  }
+      343 +  return u.HomeDir + path[1:], nil
+      344 +}
+      345 +
+      346 +// queryTagsPath reads the "context" and "tags" query parameters from r, expands
+      347 +// any leading "~" to the current user's home directory, and returns the resolved
+      348 +// tags file path.
+      349 +func queryTagsPath(r *http.Request) (string, error) {
+      350 +  context, err := expandTilde(r.URL.Query().Get("context"))
+      351 +  if err != nil {
+      352 +    return "", err
+      353 +  }
+      354 +  tagsParam, err := expandTilde(r.URL.Query().Get("tags"))
+      355 +  if err != nil {
+      356 +    return "", err
+      357 +  }
+      358 +  return resolveTagsPath(context, tagsParam), nil
+      359 +}
+      360 +
+      361  // Snippet represents a code snippet extracted from a source file for a given tag.
+      362  type Snippet struct {
+      363    Name  string `json:"name"`
+
+⏺ 次に4つのハンドラを queryTagsPath を使うよう書き換えます。
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 2 lines
+      619    })
+      620
+      621    mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      622 -    context := r.URL.Query().Get("context")
+      623 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      622 +    tagsPath, err := queryTagsPath(r)
+      623 +    if err != nil {
+      624 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      625 +      return
+      626 +    }
+      627
+      628      db, err := loadTagsFile(tagsPath)
+      629      if err != nil {
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 2 lines
+      649
+      650    mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
+      651      tagName := r.PathValue("name")
+      652 -    context := r.URL.Query().Get("context")
+      653 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      652 +    tagsPath, err := queryTagsPath(r)
+      653 +    if err != nil {
+      654 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      655 +      return
+      656 +    }
+      657
+      658      results, err := lookupTag(tagsPath, tagName)
+      659      if err != nil {
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 2 lines
+      678
+      679    mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+      680      tagName := r.PathValue("name")
+      681 -    context := r.URL.Query().Get("context")
+      682 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      681 +    tagsPath, err := queryTagsPath(r)
+      682 +    if err != nil {
+      683 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      684 +      return
+      685 +    }
+      686      contextDir := filepath.Dir(tagsPath)
+      687
+      688      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 2 lines
+      718
+      719    mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      720      tagName := r.PathValue("name")
+      721 -    context := r.URL.Query().Get("context")
+      722 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      721 +    tagsPath, err := queryTagsPath(r)
+      722 +    if err != nil {
+      723 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      724 +      return
+      725 +    }
+      726      contextDir := filepath.Dir(tagsPath)
+      727
+      728      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./...)
+  ⎿  (No output)
+
+⏺ ビルド成功。次にテストを更新します。main_test.go の newHandler も同様に更新し、expandTilde と queryTagsPath のテストを追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 5 lines, removed 2 lines
+      236      }
+      237    })
+      238    mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      239 -    context := r.URL.Query().Get("context")
+      240 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      239 +    tagsPath, err := queryTagsPath(r)
+      240 +    if err != nil {
+      241 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      242 +      return
+      243 +    }
+      244      db, err := loadTagsFile(tagsPath)
+      245      if err != nil {
+      246        if errors.Is(err, os.ErrNotExist) {
+
+⏺ Update(main_test.go)
+  ⎿  Added 5 lines, removed 2 lines
+      263        http.Error(w, "tag name required", http.StatusBadRequest)
+      264        return
+      265      }
+      266 -    context := r.URL.Query().Get("context")
+      267 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      266 +    tagsPath, err := queryTagsPath(r)
+      267 +    if err != nil {
+      268 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      269 +      return
+      270 +    }
+      271      results, err := lookupTag(tagsPath, tagName)
+      272      if err != nil {
+      273        if errors.Is(err, os.ErrNotExist) {
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 5 lines, removed 2 lines
+      286    })
+      287    mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+      288      tagName := r.PathValue("name")
+      289 -    context := r.URL.Query().Get("context")
+      290 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      289 +    tagsPath, err := queryTagsPath(r)
+      290 +    if err != nil {
+      291 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      292 +      return
+      293 +    }
+      294      contextDir := filepath.Dir(tagsPath)
+      295
+      296      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 5 lines, removed 2 lines
+      322    })
+      323    mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      324      tagName := r.PathValue("name")
+      325 -    context := r.URL.Query().Get("context")
+      326 -    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      325 +    tagsPath, err := queryTagsPath(r)
+      326 +    if err != nil {
+      327 +      http.Error(w, err.Error(), http.StatusBadRequest)
+      328 +      return
+      329 +    }
+      330      contextDir := filepath.Dir(tagsPath)
+      331
+      332      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ os/user import が不要になったので削除します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      14    "os/exec"
+      15    "os/user"
+      16    "path/filepath"
+      17 +
+      18    "strings"
+      19    "testing"
+      20  )
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 待って、TestUserHandler_ReturnsUserAndHomedir で user.Current() を使っているので os/user は必要です。元に戻します。
+
+⏺ Update(main_test.go)
+  ⎿  Removed 1 line
+      14    "os/exec"
+      15    "os/user"
+      16    "path/filepath"
+      17 -
+      17    "strings"
+      18    "testing"
+      19  )
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 次に expandTilde と queryTagsPath のテストを追加します。// ---- GET /user handler tests ---- の前に挿入します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 173 lines
+      2141    }
+      2142  }
+      2143
+      2144 +// ---- expandTilde tests ----
+      2145 +
+      2146 +func TestExpandTilde_NoTilde(t *testing.T) {
+      2147 +  got, err := expandTilde("/absolute/path")
+      2148 +  if err != nil {
+      2149 +    t.Fatalf("unexpected error: %v", err)
+      2150 +  }
+      2151 +  if got != "/absolute/path" {
+      2152 +    t.Errorf("got %q, want %q", got, "/absolute/path")
+      2153 +  }
+      2154 +}
+      2155 +
+      2156 +func TestExpandTilde_EmptyString(t *testing.T) {
+      2157 +  got, err := expandTilde("")
+      2158 +  if err != nil {
+      2159 +    t.Fatalf("unexpected error: %v", err)
+      2160 +  }
+      2161 +  if got != "" {
+      2162 +    t.Errorf("got %q, want %q", got, "")
+      2163 +  }
+      2164 +}
+      2165 +
+      2166 +func TestExpandTilde_TildeAlone(t *testing.T) {
+      2167 +  u, err := user.Current()
+      2168 +  if err != nil {
+      2169 +    t.Fatalf("user.Current: %v", err)
+      2170 +  }
+      2171 +  got, err := expandTilde("~")
+      2172 +  if err != nil {
+      2173 +    t.Fatalf("unexpected error: %v", err)
+      2174 +  }
+      2175 +  if got != u.HomeDir {
+      2176 +    t.Errorf("got %q, want %q", got, u.HomeDir)
+      2177 +  }
+      2178 +}
+      2179 +
+      2180 +func TestExpandTilde_TildeWithPath(t *testing.T) {
+      2181 +  u, err := user.Current()
+      2182 +  if err != nil {
+      2183 +    t.Fatalf("user.Current: %v", err)
+      2184 +  }
+      2185 +  got, err := expandTilde("~/projects/myrepo")
+      2186 +  if err != nil {
+      2187 +    t.Fatalf("unexpected error: %v", err)
+      2188 +  }
+      2189 +  want := u.HomeDir + "/projects/myrepo"
+      2190 +  if got != want {
+      2191 +    t.Errorf("got %q, want %q", got, want)
+      2192 +  }
+      2193 +}
+      2194 +
+      2195 +func TestExpandTilde_TildeInMiddle(t *testing.T) {
+      2196 +  // ~ not at the start must not be expanded
+      2197 +  got, err := expandTilde("/path/to/~/file")
+      2198 +  if err != nil {
+      2199 +    t.Fatalf("unexpected error: %v", err)
+      2200 +  }
+      2201 +  if got != "/path/to/~/file" {
+      2202 +    t.Errorf("got %q, want %q", got, "/path/to/~/file")
+      2203 +  }
+      2204 +}
+      2205 +
+      2206 +// ---- queryTagsPath / tilde expansion in handlers tests ----
+      2207 +
+      2208 +func TestHandler_ContextTildeExpansion(t *testing.T) {
+      2209 +  u, err := user.Current()
+      2210 +  if err != nil {
+      2211 +    t.Fatalf("user.Current: %v", err)
+      2212 +  }
+      2213 +
+      2214 +  // Create a temporary directory under the real home dir to serve as the context.
+      2215 +  tmpDir, err := os.MkdirTemp(u.HomeDir, "codesnippetd-test-*")
+      2216 +  if err != nil {
+      2217 +    t.Fatalf("MkdirTemp: %v", err)
+      2218 +  }
+      2219 +  defer os.RemoveAll(tmpDir)
+      2220 +
+      2221 +  // Copy testdata/tags into the temp dir so the handler can find it.
+      2222 +  tagsData, err := os.ReadFile(filepath.Join("testdata", "tags"))
+      2223 +  if err != nil {
+      2224 +    t.Fatalf("reading testdata/tags: %v", err)
+      2225 +  }
+      2226 +  if err := os.WriteFile(filepath.Join(tmpDir, "tags"), tagsData, 0o644); err != nil {
+      2227 +    t.Fatalf("writing tags: %v", err)
+      2228 +  }
+      2229 +
+      2230 +  // Also copy the source files that the tags reference.
+      2231 +  for _, name := range []string{"sample.go", "other.go"} {
+      2232 +    src, err := os.ReadFile(filepath.Join("testdata", name))
+      2233 +    if err != nil {
+      2234 +      t.Fatalf("reading %s: %v", name, err)
+      2235 +    }
+      2236 +    if err := os.WriteFile(filepath.Join(tmpDir, name), src, 0o644); err != nil {
+      2237 +      t.Fatalf("writing %s: %v", name, err)
+      2238 +    }
+      2239 +  }
+      2240 +
+      2241 +  // Build a context value using ~ so it starts with the home dir.
+      2242 +  rel, err := filepath.Rel(u.HomeDir, tmpDir)
+      2243 +  if err != nil {
+      2244 +    t.Fatalf("Rel: %v", err)
+      2245 +  }
+      2246 +  tildeContext := "~/" + rel
+      2247 +
+      2248 +  srv := httptest.NewServer(newHandler(false))
+      2249 +  defer srv.Close()
+      2250 +
+      2251 +  resp, err := http.Get(srv.URL + "/tags?context=" + tildeContext)
+      2252 +  if err != nil {
+      2253 +    t.Fatal(err)
+      2254 +  }
+      2255 +  defer resp.Body.Close()
+      2256 +
+      2257 +  if resp.StatusCode != http.StatusOK {
+      2258 +    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      2259 +  }
+      2260 +  var tags []map[string]interface{}
+      2261 +  if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      2262 +    t.Fatalf("decode: %v", err)
+      2263 +  }
+      2264 +  if len(tags) == 0 {
+      2265 +    t.Error("expected non-empty tag list with tilde context")
+      2266 +  }
+      2267 +}
+      2268 +
+      2269 +func TestHandler_TagsParamTildeExpansion(t *testing.T) {
+      2270 +  u, err := user.Current()
+      2271 +  if err != nil {
+      2272 +    t.Fatalf("user.Current: %v", err)
+      2273 +  }
+      2274 +
+      2275 +  tmpDir, err := os.MkdirTemp(u.HomeDir, "codesnippetd-test-*")
+      2276 +  if err != nil {
+      2277 +    t.Fatalf("MkdirTemp: %v", err)
+      2278 +  }
+      2279 +  defer os.RemoveAll(tmpDir)
+      2280 +
+      2281 +  tagsData, err := os.ReadFile(filepath.Join("testdata", "tags"))
+      2282 +  if err != nil {
+      2283 +    t.Fatalf("reading testdata/tags: %v", err)
+      2284 +  }
+      2285 +  tagsFile := filepath.Join(tmpDir, "tags")
+      2286 +  if err := os.WriteFile(tagsFile, tagsData, 0o644); err != nil {
+      2287 +    t.Fatalf("writing tags: %v", err)
+      2288 +  }
+      2289 +
+      2290 +  rel, err := filepath.Rel(u.HomeDir, tagsFile)
+      2291 +  if err != nil {
+      2292 +    t.Fatalf("Rel: %v", err)
+      2293 +  }
+      2294 +  tildeTags := "~/" + rel
+      2295 +
+      2296 +  srv := httptest.NewServer(newHandler(false))
+      2297 +  defer srv.Close()
+      2298 +
+      2299 +  resp, err := http.Get(srv.URL + "/tags?tags=" + tildeTags)
+      2300 +  if err != nil {
+      2301 +    t.Fatal(err)
+      2302 +  }
+      2303 +  defer resp.Body.Close()
+      2304 +
+      2305 +  if resp.StatusCode != http.StatusOK {
+      2306 +    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      2307 +  }
+      2308 +  var tags []map[string]interface{}
+      2309 +  if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      2310 +    t.Fatalf("decode: %v", err)
+      2311 +  }
+      2312 +  if len(tags) == 0 {
+      2313 +    t.Error("expected non-empty tag list with tilde tags param")
+      2314 +  }
+      2315 +}
+      2316 +
+      2317  // ---- GET /user handler tests ----
+      2318
+      2319  func TestUserHandler_StatusAndContentType(t *testing.T) {
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go test -run "TestExpandTilde|TestHandler_ContextTildeExpansion|TestHandler_TagsParamTildeExpansion" -v 2>&1)
+  ⎿  === RUN   TestExpandTilde_NoTilde
+     --- PASS: TestExpandTilde_NoTilde (0.00s)
+     === RUN   TestExpandTilde_EmptyString
+     … +15 lines (ctrl+o to expand)
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テスト PASS。念のため全テストも確認します。
+
+⏺ Bash(go test ./... 2>&1 | tail -5)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.747s
+
+⏺ 全テスト PASS です。実装の概要:
+
+  main.go に追加した関数:
+  - expandTilde(path string) (string, error) — ~ で始まるパスをホームディレクトリに展開。それ以外はそのまま返す
+  - queryTagsPath(r *http.Request) (string, error) — context と tags の両クエリパラメータを読み、それぞれ tilde 展開してから resolveTagsPath に渡す
+
+  変更したハンドラ: GET /tags、GET /tags/{name}、GET /snippets/{name}、GET /lines/{name} の4つで queryTagsPath を使うよう統一
+
+  追加したテスト:
+  - TestExpandTilde_* — 各種入力パターン (tilde なし、空文字、~ のみ、~/path、中間の ~)
+  - TestHandler_ContextTildeExpansion — context=~/... がホームディレクトリに展開されて正常に動作することを確認
+  - TestHandler_TagsParamTildeExpansion — tags=~/... が同様に展開されることを確認
+
+✻ Worked for 2m 9s
+```

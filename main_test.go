@@ -236,8 +236,11 @@ func newHandler(useTreeSitter bool) http.Handler {
 		}
 	})
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		db, err := loadTagsFile(tagsPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -260,8 +263,11 @@ func newHandler(useTreeSitter bool) http.Handler {
 			http.Error(w, "tag name required", http.StatusBadRequest)
 			return
 		}
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -280,8 +286,11 @@ func newHandler(useTreeSitter bool) http.Handler {
 	})
 	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
@@ -313,8 +322,11 @@ func newHandler(useTreeSitter bool) http.Handler {
 	})
 	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
@@ -2126,6 +2138,179 @@ func TestPipe_GetEmptyBuffer(t *testing.T) {
 	}
 	if len(body) != 0 {
 		t.Errorf("expected empty body, got %q", string(body))
+	}
+}
+
+// ---- expandTilde tests ----
+
+func TestExpandTilde_NoTilde(t *testing.T) {
+	got, err := expandTilde("/absolute/path")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "/absolute/path" {
+		t.Errorf("got %q, want %q", got, "/absolute/path")
+	}
+}
+
+func TestExpandTilde_EmptyString(t *testing.T) {
+	got, err := expandTilde("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want %q", got, "")
+	}
+}
+
+func TestExpandTilde_TildeAlone(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+	got, err := expandTilde("~")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != u.HomeDir {
+		t.Errorf("got %q, want %q", got, u.HomeDir)
+	}
+}
+
+func TestExpandTilde_TildeWithPath(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+	got, err := expandTilde("~/projects/myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := u.HomeDir + "/projects/myrepo"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestExpandTilde_TildeInMiddle(t *testing.T) {
+	// ~ not at the start must not be expanded
+	got, err := expandTilde("/path/to/~/file")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "/path/to/~/file" {
+		t.Errorf("got %q, want %q", got, "/path/to/~/file")
+	}
+}
+
+// ---- queryTagsPath / tilde expansion in handlers tests ----
+
+func TestHandler_ContextTildeExpansion(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+
+	// Create a temporary directory under the real home dir to serve as the context.
+	tmpDir, err := os.MkdirTemp(u.HomeDir, "codesnippetd-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Copy testdata/tags into the temp dir so the handler can find it.
+	tagsData, err := os.ReadFile(filepath.Join("testdata", "tags"))
+	if err != nil {
+		t.Fatalf("reading testdata/tags: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "tags"), tagsData, 0o644); err != nil {
+		t.Fatalf("writing tags: %v", err)
+	}
+
+	// Also copy the source files that the tags reference.
+	for _, name := range []string{"sample.go", "other.go"} {
+		src, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, name), src, 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+
+	// Build a context value using ~ so it starts with the home dir.
+	rel, err := filepath.Rel(u.HomeDir, tmpDir)
+	if err != nil {
+		t.Fatalf("Rel: %v", err)
+	}
+	tildeContext := "~/" + rel
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/tags?context=" + tildeContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var tags []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Error("expected non-empty tag list with tilde context")
+	}
+}
+
+func TestHandler_TagsParamTildeExpansion(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+
+	tmpDir, err := os.MkdirTemp(u.HomeDir, "codesnippetd-test-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	tagsData, err := os.ReadFile(filepath.Join("testdata", "tags"))
+	if err != nil {
+		t.Fatalf("reading testdata/tags: %v", err)
+	}
+	tagsFile := filepath.Join(tmpDir, "tags")
+	if err := os.WriteFile(tagsFile, tagsData, 0o644); err != nil {
+		t.Fatalf("writing tags: %v", err)
+	}
+
+	rel, err := filepath.Rel(u.HomeDir, tagsFile)
+	if err != nil {
+		t.Fatalf("Rel: %v", err)
+	}
+	tildeTags := "~/" + rel
+
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/tags?tags=" + tildeTags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var tags []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Error("expected non-empty tag list with tilde tags param")
 	}
 }
 

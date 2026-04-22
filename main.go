@@ -330,6 +330,34 @@ func resolveTagsPath(context, tagsParam string) string {
 	return tagsFileForContext(context)
 }
 
+// expandTilde replaces a leading "~" in path with the current user's home directory.
+// Paths that do not start with "~" are returned unchanged.
+func expandTilde(path string) (string, error) {
+	if !strings.HasPrefix(path, "~") {
+		return path, nil
+	}
+	u, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("expanding ~: %w", err)
+	}
+	return u.HomeDir + path[1:], nil
+}
+
+// queryTagsPath reads the "context" and "tags" query parameters from r, expands
+// any leading "~" to the current user's home directory, and returns the resolved
+// tags file path.
+func queryTagsPath(r *http.Request) (string, error) {
+	context, err := expandTilde(r.URL.Query().Get("context"))
+	if err != nil {
+		return "", err
+	}
+	tagsParam, err := expandTilde(r.URL.Query().Get("tags"))
+	if err != nil {
+		return "", err
+	}
+	return resolveTagsPath(context, tagsParam), nil
+}
+
 // Snippet represents a code snippet extracted from a source file for a given tag.
 type Snippet struct {
 	Name  string `json:"name"`
@@ -591,8 +619,11 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		db, err := loadTagsFile(tagsPath)
 		if err != nil {
@@ -618,8 +649,11 @@ func main() {
 
 	mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
@@ -644,8 +678,11 @@ func main() {
 
 	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
@@ -681,8 +718,11 @@ func main() {
 
 	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
-		context := r.URL.Query().Get("context")
-		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+		tagsPath, err := queryTagsPath(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
