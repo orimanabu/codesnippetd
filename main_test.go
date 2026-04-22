@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -219,6 +220,20 @@ func newHandler(useTreeSitter bool) http.Handler {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok"}`)
+	})
+	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
+		u, err := user.Current()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to get current user: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]string{
+			"user":    u.Username,
+			"homedir": u.HomeDir,
+		}); err != nil {
+			log.Printf("encoding response: %v", err)
+		}
 	})
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
 		context := r.URL.Query().Get("context")
@@ -2111,6 +2126,63 @@ func TestPipe_GetEmptyBuffer(t *testing.T) {
 	}
 	if len(body) != 0 {
 		t.Errorf("expected empty body, got %q", string(body))
+	}
+}
+
+// ---- GET /user handler tests ----
+
+func TestUserHandler_StatusAndContentType(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/user", nil)
+	w := httptest.NewRecorder()
+	newHandler(false).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type: got %q, want application/json", ct)
+	}
+}
+
+func TestUserHandler_ReturnsUserAndHomedir(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/user", nil)
+	w := httptest.NewRecorder()
+	newHandler(false).ServeHTTP(w, req)
+
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["user"] != u.Username {
+		t.Errorf("user: got %q, want %q", body["user"], u.Username)
+	}
+	if body["homedir"] != u.HomeDir {
+		t.Errorf("homedir: got %q, want %q", body["homedir"], u.HomeDir)
+	}
+}
+
+func TestUserHandler_OnlyExpectedFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/user", nil)
+	w := httptest.NewRecorder()
+	newHandler(false).ServeHTTP(w, req)
+
+	var body map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["user"]; !ok {
+		t.Error("response missing 'user' field")
+	}
+	if _, ok := body["homedir"]; !ok {
+		t.Error("response missing 'homedir' field")
+	}
+	if len(body) != 2 {
+		t.Errorf("expected exactly 2 fields, got %d: %v", len(body), body)
 	}
 }
 

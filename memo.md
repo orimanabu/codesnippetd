@@ -11535,3 +11535,184 @@ Sitterパーザを使わず、ctagsパーザのみを使う動きにしてくだ
   GET /snippets/myFunc query="context=/path/to/project" 200 1.2ms parser=tree-sitter
   GET /pipe query="" 204 0.1ms
 ```
+
+```
+❯ `/user` という新しいAPIエンドポイントを新設してください。GET /userすると、codesnippetd実行ユーザーのユーザー名とホームディレクトリをJSONで返します。response jsonは `{"user":
+"SOMEONE", "homedir": "/Users/SOMEONE"}` のような形式でお願いします
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ os/user パッケージを使って /user エンドポイントを追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 1 line
+      11    "net/http"
+      12    "os"
+      13    "os/exec"
+      14 +  "os/user"
+      15    "path/filepath"
+      16    "strconv"
+      17    "strings"
+
+⏺ Update(main.go)
+  ⎿  Added 15 lines
+      539      fmt.Fprintln(w, `{"status":"ok"}`)
+      540    })
+      541
+      542 +  mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
+      543 +    u, err := user.Current()
+      544 +    if err != nil {
+      545 +      http.Error(w, fmt.Sprintf("failed to get current user: %v", err), http.StatusInternalServerError)
+      546 +      return
+      547 +    }
+      548 +    w.Header().Set("Content-Type", "application/json")
+      549 +    if err := json.NewEncoder(w).Encode(map[string]string{
+      550 +      "user":    u.Username,
+      551 +      "homedir": u.HomeDir,
+      552 +    }); err != nil {
+      553 +      log.Printf("encoding response: %v", err)
+      554 +    }
+      555 +  })
+      556 +
+      557    mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+      558      body, err := io.ReadAll(r.Body)
+      559      if err != nil {
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./...)
+  ⎿  (No output)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ ビルド成功。GET /user エンドポイントを追加しました。
+
+  動作確認:
+  curl http://localhost:8999/user
+  # {"homedir":"/Users/SOMEONE","user":"SOMEONE"}
+
+  os/user.Current() を使って実行ユーザーのユーザー名 (Username) とホームディレクトリ (HomeDir) を取得し、JSON で返します。
+
+❯ テストコードもお願いします
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ newHandler に /user ハンドラを追加し、テストを書きます。
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line
+      12    "net/http/httptest"
+      13    "os"
+      14    "os/exec"
+      15 +  "os/user"
+      16    "path/filepath"
+      17    "strings"
+      18    "testing"
+
+⏺ Update(main_test.go)
+  ⎿  Added 14 lines
+      221      w.Header().Set("Content-Type", "application/json")
+      222      fmt.Fprintln(w, `{"status":"ok"}`)
+      223    })
+      224 +  mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
+      225 +    u, err := user.Current()
+      226 +    if err != nil {
+      227 +      http.Error(w, fmt.Sprintf("failed to get current user: %v", err), http.StatusInternalServerError)
+      228 +      return
+      229 +    }
+      230 +    w.Header().Set("Content-Type", "application/json")
+      231 +    if err := json.NewEncoder(w).Encode(map[string]string{
+      232 +      "user":    u.Username,
+      233 +      "homedir": u.HomeDir,
+      234 +    }); err != nil {
+      235 +      log.Printf("encoding response: %v", err)
+      236 +    }
+      237 +  })
+      238    mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      239      context := r.URL.Query().Get("context")
+      240      tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ テスト関数を末尾に追加します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 57 lines
+      2129    }
+      2130  }
+      2131
+      2132 +// ---- GET /user handler tests ----
+      2133 +
+      2134 +func TestUserHandler_StatusAndContentType(t *testing.T) {
+      2135 +  req := httptest.NewRequest(http.MethodGet, "/user", nil)
+      2136 +  w := httptest.NewRecorder()
+      2137 +  newHandler(false).ServeHTTP(w, req)
+      2138 +
+      2139 +  if w.Code != http.StatusOK {
+      2140 +    t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+      2141 +  }
+      2142 +  if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+      2143 +    t.Errorf("Content-Type: got %q, want application/json", ct)
+      2144 +  }
+      2145 +}
+      2146 +
+      2147 +func TestUserHandler_ReturnsUserAndHomedir(t *testing.T) {
+      2148 +  u, err := user.Current()
+      2149 +  if err != nil {
+      2150 +    t.Fatalf("user.Current: %v", err)
+      2151 +  }
+      2152 +
+      2153 +  req := httptest.NewRequest(http.MethodGet, "/user", nil)
+      2154 +  w := httptest.NewRecorder()
+      2155 +  newHandler(false).ServeHTTP(w, req)
+      2156 +
+      2157 +  var body map[string]string
+      2158 +  if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+      2159 +    t.Fatalf("decode: %v", err)
+      2160 +  }
+      2161 +  if body["user"] != u.Username {
+      2162 +    t.Errorf("user: got %q, want %q", body["user"], u.Username)
+      2163 +  }
+      2164 +  if body["homedir"] != u.HomeDir {
+      2165 +    t.Errorf("homedir: got %q, want %q", body["homedir"], u.HomeDir)
+      2166 +  }
+      2167 +}
+      2168 +
+      2169 +func TestUserHandler_OnlyExpectedFields(t *testing.T) {
+      2170 +  req := httptest.NewRequest(http.MethodGet, "/user", nil)
+      2171 +  w := httptest.NewRecorder()
+      2172 +  newHandler(false).ServeHTTP(w, req)
+      2173 +
+      2174 +  var body map[string]string
+      2175 +  if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+      2176 +    t.Fatalf("decode: %v", err)
+      2177 +  }
+      2178 +  if _, ok := body["user"]; !ok {
+      2179 +    t.Error("response missing 'user' field")
+      2180 +  }
+      2181 +  if _, ok := body["homedir"]; !ok {
+      2182 +    t.Error("response missing 'homedir' field")
+      2183 +  }
+      2184 +  if len(body) != 2 {
+      2185 +    t.Errorf("expected exactly 2 fields, got %d: %v", len(body), body)
+      2186 +  }
+      2187 +}
+      2188 +
+      2189  // ---- MarshalJSON tests ----
+      2190
+      2191  func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go test -run TestUserHandler -v)
+  ⎿  === RUN   TestUserHandler_StatusAndContentType
+     2026/04/22 15:27:29 GET /user query="" 200 1.873084ms parser=ctags
+     --- PASS: TestUserHandler_StatusAndContentType (0.00s)
+     … +8 lines (ctrl+o to expand)
+  ⎿  Found 3 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 3つのテストすべて PASS しました。
+
+  追加したテスト:
+  - TestUserHandler_StatusAndContentType — ステータス 200 と Content-Type: application/json を確認
+  - TestUserHandler_ReturnsUserAndHomedir — user と homedir が os/user.Current() の値と一致するか確認
+  - TestUserHandler_OnlyExpectedFields — レスポンスに余分なフィールドがないか (フィールド数が2つだけ) 確認
+
+✻ Churned for 37s
+```
