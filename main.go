@@ -306,10 +306,14 @@ func lookupTag(tagsPath, tagName string) ([]Tag, error) {
 }
 
 // tagsFileForContext resolves the tags file path given an optional context query param.
-// If context is empty, "./tags" is used. Otherwise "<context>/tags" is used.
+// If context is empty, "./tags" is used. If context is an absolute path, "<context>/tags"
+// is used directly. Otherwise "./<context>/tags" is used.
 func tagsFileForContext(context string) string {
 	if context == "" {
 		return filepath.Join(".", "tags")
+	}
+	if filepath.IsAbs(context) {
+		return filepath.Join(context, "tags")
 	}
 	return filepath.Join(".", context, "tags")
 }

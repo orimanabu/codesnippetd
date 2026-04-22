@@ -10923,3 +10923,95 @@ present on the requested resource.
   で相対パスを返す。見つからなければフルパスを返す。
   - filePath の取得（23行）を gitRelativePath(editor.document.fileName) に変更。
 ```
+
+```
+❯ クエリーパラメータのcontextに絶対パスは指定できますか
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ tagsFileForContext の実装を確認します（main.go:310）。
+
+  func tagsFileForContext(context string) string {
+      if context == "" {
+          return filepath.Join(".", "tags")
+      }
+      return filepath.Join(".", context, "tags")
+  }
+
+  絶対パスは指定できません。
+
+  filepath.Join(".", context, "tags") で構築しているため、context に絶対パス（例: /home/user/myproject）を渡しても、先頭の "." と結合されて相対パスとして扱われます。
+
+  例えば context=/home/user/myproject を指定すると：
+  - 期待: /home/user/myproject/tags
+  - 実際: home/user/myproject/tags（filepath.Join が先頭の / を除去）
+
+  絶対パスを対応させる場合は tagsFileForContext を修正する必要があります。対応しますか？
+
+❯ お願いします
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 5 lines, removed 1 line
+      306  }
+      307
+      308  // tagsFileForContext resolves the tags file path given an optional context query param.
+      309 -// If context is empty, "./tags" is used. Otherwise "<context>/tags" is used.
+      309 +// If context is empty, "./tags" is used. If context is an absolute path, "<context>/tags"
+      310 +// is used directly. Otherwise "./<context>/tags" is used.
+      311  func tagsFileForContext(context string) string {
+      312    if context == "" {
+      313      return filepath.Join(".", "tags")
+      314    }
+      315 +  if filepath.IsAbs(context) {
+      316 +    return filepath.Join(context, "tags")
+      317 +  }
+      318    return filepath.Join(".", context, "tags")
+      319  }
+      320
+
+⏺ 次にテストを追加します。
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Error editing file
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 10 lines
+      1586    }
+      1587  }
+      1588
+      1589 +// TestTagsFileForContext_AbsolutePath verifies that an absolute path context is used
+      1590 +// directly without prepending ".".
+      1591 +func TestTagsFileForContext_AbsolutePath(t *testing.T) {
+      1592 +  got := tagsFileForContext("/home/user/myproject")
+      1593 +  want := "/home/user/myproject/tags"
+      1594 +  if got != want {
+      1595 +    t.Errorf("got %q, want %q", got, want)
+      1596 +  }
+      1597 +}
+      1598 +
+      1599  // TestHandler_ContextNotFound checks that all four endpoints return 404 when
+      1600  // the context directory (and therefore the tags file) does not exist.
+      1601  func TestHandler_ContextNotFound(t *testing.T) {
+
+⏺ Bash(go test ./... -run "TestTagsFileForContext" -v 2>&1)
+  ⎿  === RUN   TestTagsFileForContext_Empty
+     --- PASS: TestTagsFileForContext_Empty (0.00s)
+     === RUN   TestTagsFileForContext_WithPath
+     … +7 lines (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 全テスト通過しました。
+
+  変更内容:
+  - main.go:310 — tagsFileForContext に filepath.IsAbs チェックを追加。絶対パスの場合は "." を前置せず <context>/tags をそのまま返すように修正
+  - main_test.go — TestTagsFileForContext_AbsolutePath テストを追加
+
+✻ Crunched for 34s
+```

@@ -1586,6 +1586,16 @@ func TestTagsFileForContext_Slashes(t *testing.T) {
 	}
 }
 
+// TestTagsFileForContext_AbsolutePath verifies that an absolute path context is used
+// directly without prepending ".".
+func TestTagsFileForContext_AbsolutePath(t *testing.T) {
+	got := tagsFileForContext("/home/user/myproject")
+	want := "/home/user/myproject/tags"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 // TestHandler_ContextNotFound checks that all four endpoints return 404 when
 // the context directory (and therefore the tags file) does not exist.
 func TestHandler_ContextNotFound(t *testing.T) {
