@@ -318,6 +318,16 @@ func tagsFileForContext(context string) string {
 	return filepath.Join(".", context, "tags")
 }
 
+// resolveTagsPath returns the tags file path to use for a request.
+// If tagsParam is non-empty it is used directly (as provided by the "tags" query parameter).
+// Otherwise tagsFileForContext(context) is used.
+func resolveTagsPath(context, tagsParam string) string {
+	if tagsParam != "" {
+		return tagsParam
+	}
+	return tagsFileForContext(context)
+}
+
 // Snippet represents a code snippet extracted from a source file for a given tag.
 type Snippet struct {
 	Name  string `json:"name"`
@@ -561,7 +571,7 @@ func main() {
 
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 
 		db, err := loadTagsFile(tagsPath)
 		if err != nil {
@@ -588,7 +598,7 @@ func main() {
 	mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
@@ -614,7 +624,7 @@ func main() {
 	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
@@ -651,7 +661,7 @@ func main() {
 	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)

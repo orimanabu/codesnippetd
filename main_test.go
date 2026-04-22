@@ -222,7 +222,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 	})
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 		db, err := loadTagsFile(tagsPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -246,7 +246,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 			return
 		}
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 		results, err := lookupTag(tagsPath, tagName)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -266,7 +266,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
@@ -299,7 +299,7 @@ func newHandler(useTreeSitter bool) http.Handler {
 	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
 		tagName := r.PathValue("name")
 		context := r.URL.Query().Get("context")
-		tagsPath := tagsFileForContext(context)
+		tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
 		contextDir := filepath.Dir(tagsPath)
 
 		results, err := lookupTag(tagsPath, tagName)
@@ -1593,6 +1593,205 @@ func TestTagsFileForContext_AbsolutePath(t *testing.T) {
 	want := "/home/user/myproject/tags"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// ---- resolveTagsPath tests ----
+
+func TestResolveTagsPath_TagsParamTakesPrecedence(t *testing.T) {
+	got := resolveTagsPath("some/context", "/explicit/path/tags")
+	want := "/explicit/path/tags"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveTagsPath_FallsBackToContext(t *testing.T) {
+	got := resolveTagsPath("sub/project", "")
+	want := filepath.Join(".", "sub", "project", "tags")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveTagsPath_BothEmpty(t *testing.T) {
+	got := resolveTagsPath("", "")
+	want := filepath.Join(".", "tags")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveTagsPath_RelativeTagsParam(t *testing.T) {
+	got := resolveTagsPath("", "custom/tags")
+	if got != "custom/tags" {
+		t.Errorf("got %q, want %q", got, "custom/tags")
+	}
+}
+
+// ---- tags= query parameter handler tests ----
+
+// TestHandler_TagsQueryParam_OverridesDefault verifies that tags= pointing to
+// testdata/sub/tags returns SubFunc even when cwd is testdata (default tags file
+// does not contain SubFunc).
+func TestHandler_TagsQueryParam_OverridesDefault(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		absTagsPath, err := filepath.Abs("sub/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.Get(srv.URL + "/tags/SubFunc?tags=" + absTagsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		var tags []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(tags) != 1 || tags[0]["name"] != "SubFunc" {
+			t.Errorf("expected SubFunc tag, got %v", tags)
+		}
+	})
+}
+
+// TestHandler_TagsQueryParam_ListAll verifies that GET /tags?tags= returns tags
+// from the explicitly specified tags file.
+func TestHandler_TagsQueryParam_ListAll(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		absTagsPath, err := filepath.Abs("sub/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.Get(srv.URL + "/tags?tags=" + absTagsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		var tags []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		names := map[string]bool{}
+		for _, tag := range tags {
+			if n, ok := tag["name"].(string); ok {
+				names[n] = true
+			}
+		}
+		if !names["SubFunc"] {
+			t.Errorf("expected SubFunc in tags from sub/tags, got names: %v", names)
+		}
+	})
+}
+
+// TestHandler_TagsQueryParam_Snippets verifies that GET /snippets/{name}?tags=
+// returns a snippet using the explicitly specified tags file.
+func TestHandler_TagsQueryParam_Snippets(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		absTagsPath, err := filepath.Abs("sub/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.Get(srv.URL + "/snippets/SubFunc?tags=" + absTagsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Name != "SubFunc" {
+			t.Errorf("Name: got %q, want SubFunc", snippets[0].Name)
+		}
+		if !strings.Contains(snippets[0].Code, "func SubFunc") {
+			t.Errorf("Code should contain func SubFunc, got %q", snippets[0].Code)
+		}
+	})
+}
+
+// TestHandler_TagsQueryParam_Lines verifies that GET /lines/{name}?tags= returns
+// line ranges using the explicitly specified tags file.
+func TestHandler_TagsQueryParam_Lines(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(false))
+		defer srv.Close()
+
+		absTagsPath, err := filepath.Abs("sub/tags")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.Get(srv.URL + "/lines/SubFunc?tags=" + absTagsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(ranges))
+		}
+		if ranges[0].Name != "SubFunc" {
+			t.Errorf("Name: got %q, want SubFunc", ranges[0].Name)
+		}
+	})
+}
+
+// TestHandler_TagsQueryParam_NotFound verifies that tags= pointing to a
+// nonexistent file returns 404.
+func TestHandler_TagsQueryParam_NotFound(t *testing.T) {
+	endpoints := []string{
+		"/tags",
+		"/tags/SomeFunc",
+		"/snippets/SomeFunc",
+		"/lines/SomeFunc",
+	}
+	srv := httptest.NewServer(newHandler(false))
+	defer srv.Close()
+
+	for _, ep := range endpoints {
+		resp, err := http.Get(srv.URL + ep + "?tags=/nonexistent/path/tags")
+		if err != nil {
+			t.Fatalf("%s: %v", ep, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: status got %d, want %d", ep, resp.StatusCode, http.StatusNotFound)
+		}
 	}
 }
 

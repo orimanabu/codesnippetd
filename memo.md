@@ -11015,3 +11015,395 @@ present on the requested resource.
 
 ✻ Crunched for 34s
 ```
+
+```
+❯ 現在の実装では、tagsファイルはカレントディレクトリもしくはcontextクエリーパラメータのパスにあることを想定しています。ここで新たにtagsクエリーパラメータを新設し、tags=<TAGSPATH>
+が指定された場合は、tagsファイルのパスをTAGSPATHとして処理するようにしてください
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ 現在の実装を把握しました。tagsFileForContext を修正して tags クエリパラメータを優先する新しいヘルパーを追加し、全ハンドラを更新します。
+
+⏺ Update(main.go)
+  ⎿  Added 10 lines
+      318    return filepath.Join(".", context, "tags")
+      319  }
+      320
+      321 +// resolveTagsPath returns the tags file path to use for a request.
+      322 +// If tagsParam is non-empty it is used directly (as provided by the "tags" query parameter).
+      323 +// Otherwise tagsFileForContext(context) is used.
+      324 +func resolveTagsPath(context, tagsParam string) string {
+      325 +  if tagsParam != "" {
+      326 +    return tagsParam
+      327 +  }
+      328 +  return tagsFileForContext(context)
+      329 +}
+      330 +
+      331  // Snippet represents a code snippet extracted from a source file for a given tag.
+      332  type Snippet struct {
+      333    Name  string `json:"name"`
+
+⏺ 次に全ハンドラを更新して tags クエリパラメータを読み取るようにします。
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      571
+      572    mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      573      context := r.URL.Query().Get("context")
+      574 -    tagsPath := tagsFileForContext(context)
+      574 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      575
+      576      db, err := loadTagsFile(tagsPath)
+      577      if err != nil {
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      598    mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
+      599      tagName := r.PathValue("name")
+      600      context := r.URL.Query().Get("context")
+      601 -    tagsPath := tagsFileForContext(context)
+      601 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      602
+      603      results, err := lookupTag(tagsPath, tagName)
+      604      if err != nil {
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      624    mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+      625      tagName := r.PathValue("name")
+      626      context := r.URL.Query().Get("context")
+      627 -    tagsPath := tagsFileForContext(context)
+      627 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      628      contextDir := filepath.Dir(tagsPath)
+      629
+      630      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main.go)
+  ⎿  Added 1 line, removed 1 line
+      661    mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      662      tagName := r.PathValue("name")
+      663      context := r.URL.Query().Get("context")
+      664 -    tagsPath := tagsFileForContext(context)
+      664 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      665      contextDir := filepath.Dir(tagsPath)
+      666
+      667      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./...)
+  ⎿  (No output)
+
+⏺ ビルド成功です。次にテストも確認します。
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       1.002s
+
+⏺ 全テスト通過です。実装内容をまとめます。
+
+  ---
+  main.go:320-327 に resolveTagsPath 関数を追加し、全4ハンドラ (GET /tags, GET /tags/{name}, GET /snippets/{name}, GET /lines/{name}) を更新しました。
+
+  動作:
+  - tags=<TAGSPATH> が指定された場合 → TAGSPATH をそのままtagsファイルのパスとして使用
+  - tags が未指定の場合 → 従来通り context パラメータに基づいて解決
+
+  使用例:
+  GET /snippets/myFunc?tags=/absolute/path/to/tags
+  GET /tags/myVar?tags=../other/project/tags
+
+✻ Crunched for 49s
+
+❯ テストコードも更新して
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ テストファイルを2箇所修正します。
+
+  1. newHandler 内の4ハンドラを resolveTagsPath 使用に更新
+  2. resolveTagsPath のユニットテストと tags= クエリパラメータの統合テストを追加
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      222    })
+      223    mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      224      context := r.URL.Query().Get("context")
+      225 -    tagsPath := tagsFileForContext(context)
+      225 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      226      db, err := loadTagsFile(tagsPath)
+      227      if err != nil {
+      228        if errors.Is(err, os.ErrNotExist) {
+
+⏺ Update(main_test.go)
+  ⎿  Added 2 lines, removed 2 lines
+      246        return
+      247      }
+      248      context := r.URL.Query().Get("context")
+      249 -    tagsPath := tagsFileForContext(context)
+      249 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      250      results, err := lookupTag(tagsPath, tagName)
+      251      if err != nil {
+      252        if errors.Is(err, os.ErrNotExist) {
+     ...
+      266    mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+      267      tagName := r.PathValue("name")
+      268      context := r.URL.Query().Get("context")
+      269 -    tagsPath := tagsFileForContext(context)
+      269 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      270      contextDir := filepath.Dir(tagsPath)
+      271
+      272      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Update(main_test.go)
+  ⎿  Added 1 line, removed 1 line
+      299    mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      300      tagName := r.PathValue("name")
+      301      context := r.URL.Query().Get("context")
+      302 -    tagsPath := tagsFileForContext(context)
+      302 +    tagsPath := resolveTagsPath(context, r.URL.Query().Get("tags"))
+      303      contextDir := filepath.Dir(tagsPath)
+      304
+      305      results, err := lookupTag(tagsPath, tagName)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 次に resolveTagsPath のユニットテストと tags= の統合テストを追加します。TestTagsFileForContext_AbsolutePath テストの直後に挿入します。
+
+⏺ Update(main_test.go)
+  ⎿  Added 199 lines
+      1596    }
+      1597  }
+      1598
+      1599 +// ---- resolveTagsPath tests ----
+      1600 +
+      1601 +func TestResolveTagsPath_TagsParamTakesPrecedence(t *testing.T) {
+      1602 +  got := resolveTagsPath("some/context", "/explicit/path/tags")
+      1603 +  want := "/explicit/path/tags"
+      1604 +  if got != want {
+      1605 +    t.Errorf("got %q, want %q", got, want)
+      1606 +  }
+      1607 +}
+      1608 +
+      1609 +func TestResolveTagsPath_FallsBackToContext(t *testing.T) {
+      1610 +  got := resolveTagsPath("sub/project", "")
+      1611 +  want := filepath.Join(".", "sub", "project", "tags")
+      1612 +  if got != want {
+      1613 +    t.Errorf("got %q, want %q", got, want)
+      1614 +  }
+      1615 +}
+      1616 +
+      1617 +func TestResolveTagsPath_BothEmpty(t *testing.T) {
+      1618 +  got := resolveTagsPath("", "")
+      1619 +  want := filepath.Join(".", "tags")
+      1620 +  if got != want {
+      1621 +    t.Errorf("got %q, want %q", got, want)
+      1622 +  }
+      1623 +}
+      1624 +
+      1625 +func TestResolveTagsPath_RelativeTagsParam(t *testing.T) {
+      1626 +  got := resolveTagsPath("", "custom/tags")
+      1627 +  if got != "custom/tags" {
+      1628 +    t.Errorf("got %q, want %q", got, "custom/tags")
+      1629 +  }
+      1630 +}
+      1631 +
+      1632 +// ---- tags= query parameter handler tests ----
+      1633 +
+      1634 +// TestHandler_TagsQueryParam_OverridesDefault verifies that tags= pointing to
+      1635 +// testdata/sub/tags returns SubFunc even when cwd is testdata (default tags file
+      1636 +// does not contain SubFunc).
+      1637 +func TestHandler_TagsQueryParam_OverridesDefault(t *testing.T) {
+      1638 +  withCwd(t, "testdata", func() {
+      1639 +    srv := httptest.NewServer(newHandler(false))
+      1640 +    defer srv.Close()
+      1641 +
+      1642 +    absTagsPath, err := filepath.Abs("sub/tags")
+      1643 +    if err != nil {
+      1644 +      t.Fatal(err)
+      1645 +    }
+      1646 +
+      1647 +    resp, err := http.Get(srv.URL + "/tags/SubFunc?tags=" + absTagsPath)
+      1648 +    if err != nil {
+      1649 +      t.Fatal(err)
+      1650 +    }
+      1651 +    defer resp.Body.Close()
+      1652 +
+      1653 +    if resp.StatusCode != http.StatusOK {
+      1654 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1655 +    }
+      1656 +    var tags []map[string]interface{}
+      1657 +    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      1658 +      t.Fatalf("decode: %v", err)
+      1659 +    }
+      1660 +    if len(tags) != 1 || tags[0]["name"] != "SubFunc" {
+      1661 +      t.Errorf("expected SubFunc tag, got %v", tags)
+      1662 +    }
+      1663 +  })
+      1664 +}
+      1665 +
+      1666 +// TestHandler_TagsQueryParam_ListAll verifies that GET /tags?tags= returns tags
+      1667 +// from the explicitly specified tags file.
+      1668 +func TestHandler_TagsQueryParam_ListAll(t *testing.T) {
+      1669 +  withCwd(t, "testdata", func() {
+      1670 +    srv := httptest.NewServer(newHandler(false))
+      1671 +    defer srv.Close()
+      1672 +
+      1673 +    absTagsPath, err := filepath.Abs("sub/tags")
+      1674 +    if err != nil {
+      1675 +      t.Fatal(err)
+      1676 +    }
+      1677 +
+      1678 +    resp, err := http.Get(srv.URL + "/tags?tags=" + absTagsPath)
+      1679 +    if err != nil {
+      1680 +      t.Fatal(err)
+      1681 +    }
+      1682 +    defer resp.Body.Close()
+      1683 +
+      1684 +    if resp.StatusCode != http.StatusOK {
+      1685 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1686 +    }
+      1687 +    var tags []map[string]interface{}
+      1688 +    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      1689 +      t.Fatalf("decode: %v", err)
+      1690 +    }
+      1691 +    names := map[string]bool{}
+      1692 +    for _, tag := range tags {
+      1693 +      if n, ok := tag["name"].(string); ok {
+      1694 +        names[n] = true
+      1695 +      }
+      1696 +    }
+      1697 +    if !names["SubFunc"] {
+      1698 +      t.Errorf("expected SubFunc in tags from sub/tags, got names: %v", names)
+      1699 +    }
+      1700 +  })
+      1701 +}
+      1702 +
+      1703 +// TestHandler_TagsQueryParam_Snippets verifies that GET /snippets/{name}?tags=
+      1704 +// returns a snippet using the explicitly specified tags file.
+      1705 +func TestHandler_TagsQueryParam_Snippets(t *testing.T) {
+      1706 +  withCwd(t, "testdata", func() {
+      1707 +    srv := httptest.NewServer(newHandler(false))
+      1708 +    defer srv.Close()
+      1709 +
+      1710 +    absTagsPath, err := filepath.Abs("sub/tags")
+      1711 +    if err != nil {
+      1712 +      t.Fatal(err)
+      1713 +    }
+      1714 +
+      1715 +    resp, err := http.Get(srv.URL + "/snippets/SubFunc?tags=" + absTagsPath)
+      1716 +    if err != nil {
+      1717 +      t.Fatal(err)
+      1718 +    }
+      1719 +    defer resp.Body.Close()
+      1720 +
+      1721 +    if resp.StatusCode != http.StatusOK {
+      1722 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1723 +    }
+      1724 +    var snippets []Snippet
+      1725 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1726 +      t.Fatalf("decode: %v", err)
+      1727 +    }
+      1728 +    if len(snippets) != 1 {
+      1729 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1730 +    }
+      1731 +    if snippets[0].Name != "SubFunc" {
+      1732 +      t.Errorf("Name: got %q, want SubFunc", snippets[0].Name)
+      1733 +    }
+      1734 +    if !strings.Contains(snippets[0].Code, "func SubFunc") {
+      1735 +      t.Errorf("Code should contain func SubFunc, got %q", snippets[0].Code)
+      1736 +    }
+      1737 +  })
+      1738 +}
+      1739 +
+      1740 +// TestHandler_TagsQueryParam_Lines verifies that GET /lines/{name}?tags= returns
+      1741 +// line ranges using the explicitly specified tags file.
+      1742 +func TestHandler_TagsQueryParam_Lines(t *testing.T) {
+      1743 +  withCwd(t, "testdata", func() {
+      1744 +    srv := httptest.NewServer(newHandler(false))
+      1745 +    defer srv.Close()
+      1746 +
+      1747 +    absTagsPath, err := filepath.Abs("sub/tags")
+      1748 +    if err != nil {
+      1749 +      t.Fatal(err)
+      1750 +    }
+      1751 +
+      1752 +    resp, err := http.Get(srv.URL + "/lines/SubFunc?tags=" + absTagsPath)
+      1753 +    if err != nil {
+      1754 +      t.Fatal(err)
+      1755 +    }
+      1756 +    defer resp.Body.Close()
+      1757 +
+      1758 +    if resp.StatusCode != http.StatusOK {
+      1759 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1760 +    }
+      1761 +    var ranges []LineRange
+      1762 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1763 +      t.Fatalf("decode: %v", err)
+      1764 +    }
+      1765 +    if len(ranges) != 1 {
+      1766 +      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1767 +    }
+      1768 +    if ranges[0].Name != "SubFunc" {
+      1769 +      t.Errorf("Name: got %q, want SubFunc", ranges[0].Name)
+      1770 +    }
+      1771 +  })
+      1772 +}
+      1773 +
+      1774 +// TestHandler_TagsQueryParam_NotFound verifies that tags= pointing to a
+      1775 +// nonexistent file returns 404.
+      1776 +func TestHandler_TagsQueryParam_NotFound(t *testing.T) {
+      1777 +  endpoints := []string{
+      1778 +    "/tags",
+      1779 +    "/tags/SomeFunc",
+      1780 +    "/snippets/SomeFunc",
+      1781 +    "/lines/SomeFunc",
+      1782 +  }
+      1783 +  srv := httptest.NewServer(newHandler(false))
+      1784 +  defer srv.Close()
+      1785 +
+      1786 +  for _, ep := range endpoints {
+      1787 +    resp, err := http.Get(srv.URL + ep + "?tags=/nonexistent/path/tags")
+      1788 +    if err != nil {
+      1789 +      t.Fatalf("%s: %v", ep, err)
+      1790 +    }
+      1791 +    resp.Body.Close()
+      1792 +    if resp.StatusCode != http.StatusNotFound {
+      1793 +      t.Errorf("%s: status got %d, want %d", ep, resp.StatusCode, http.StatusNotFound)
+      1794 +    }
+      1795 +  }
+      1796 +}
+      1797 +
+      1798  // TestHandler_ContextNotFound checks that all four endpoints return 404 when
+      1799  // the context directory (and therefore the tags file) does not exist.
+      1800  func TestHandler_ContextNotFound(t *testing.T) {
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go test ./... -v -run "TestResolveTagsPath|TestHandler_TagsQueryParam" 2>&1)
+  ⎿  === RUN   TestResolveTagsPath_TagsParamTakesPrecedence
+     --- PASS: TestResolveTagsPath_TagsParamTakesPrecedence (0.00s)
+     === RUN   TestResolveTagsPath_FallsBackToContext
+     … +25 lines (ctrl+o to expand)
+  ⎿  Found 6 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.720s
+
+⏺ 全テスト通過です。追加した内容:
+
+  ユニットテスト (resolveTagsPath):
+  - TestResolveTagsPath_TagsParamTakesPrecedence — tags= が context= より優先されること
+  - TestResolveTagsPath_FallsBackToContext — tags= 未指定時は context= にフォールバック
+  - TestResolveTagsPath_BothEmpty — 両方未指定時はデフォルト (./tags) になること
+  - TestResolveTagsPath_RelativeTagsParam — 相対パスもそのまま使われること
+
+  統合テスト (4エンドポイント):
+  - TestHandler_TagsQueryParam_OverridesDefault — GET /tags/{name}?tags= がデフォルトを上書き
+  - TestHandler_TagsQueryParam_ListAll — GET /tags?tags= が指定ファイルから一覧取得
+  - TestHandler_TagsQueryParam_Snippets — GET /snippets/{name}?tags= が指定ファイルを使用
+  - TestHandler_TagsQueryParam_Lines — GET /lines/{name}?tags= が指定ファイルを使用
+  - TestHandler_TagsQueryParam_NotFound — 存在しないパス指定時は全エンドポイントで404
+
+✻ Crunched for 1m 0s
+```
