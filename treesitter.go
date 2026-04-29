@@ -62,6 +62,119 @@ var tsDefinitionTypes = map[string]bool{
 	"internal_module":         true,
 }
 
+// isCommentNodeType reports whether nodeType represents a comment node in any
+// of the tree-sitter grammars used by this program.
+func isCommentNodeType(nodeType string) bool {
+	switch nodeType {
+	case "comment",           // Go, JS, TS, PHP, OCaml
+		"line_comment",       // Rust, Kotlin
+		"block_comment",      // Rust, Kotlin
+		"multiline_comment",  // some grammars
+		"shell_comment",      // PHP (#!)
+		"doc_comment":        // some grammars
+		return true
+	}
+	return false
+}
+
+// rowHasCommentNode reports whether any node in the subtree rooted at n covers
+// row (0-based) and is a comment node type. Block comments that span multiple
+// rows are detected correctly because the check uses the node's full span.
+func rowHasCommentNode(n *sitter.Node, row uint32) bool {
+	if isCommentNodeType(n.Type()) && n.StartPoint().Row <= row && n.EndPoint().Row >= row {
+		return true
+	}
+	for i := range int(n.ChildCount()) {
+		child := n.Child(i)
+		if child.StartPoint().Row > row {
+			break
+		}
+		if child.EndPoint().Row < row {
+			continue
+		}
+		if rowHasCommentNode(child, row) {
+			return true
+		}
+	}
+	return false
+}
+
+// findCommentStartRow walks backward from funcRow (0-based) and returns the
+// earliest row that belongs to a contiguous block of comment lines immediately
+// preceding funcRow (no blank lines between the comment block and the
+// definition). Returns funcRow if there are no preceding comment lines.
+func findCommentStartRow(root *sitter.Node, funcRow uint32) uint32 {
+	row := funcRow
+	for row > 0 && rowHasCommentNode(root, row-1) {
+		row--
+	}
+	return row
+}
+
+// resolveStartWithTreeSitter parses content with lang and returns the 1-based
+// start line including any leading comment block immediately before funcLine
+// (1-based). Returns funcLine unchanged on error.
+func resolveStartWithTreeSitter(lang *sitter.Language, content []byte, funcLine int) (int, error) {
+	parser := sitter.NewParser()
+	parser.SetLanguage(lang)
+	tree, err := parser.ParseCtx(context.Background(), nil, content)
+	if err != nil {
+		return funcLine, fmt.Errorf("tree-sitter parse: %w", err)
+	}
+	defer tree.Close()
+	startRow := findCommentStartRow(tree.RootNode(), uint32(funcLine-1))
+	return int(startRow) + 1, nil
+}
+
+// resolveStartWithTreeSitterRust returns the 1-based start line (including any
+// leading comment block) for the Rust definition whose first line is funcLine.
+func resolveStartWithTreeSitterRust(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(rust.GetLanguage(), content, funcLine)
+}
+
+// resolveStartWithTreeSitterJS returns the 1-based start line (including any
+// leading comment block) for the JavaScript definition whose first line is funcLine.
+func resolveStartWithTreeSitterJS(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(javascript.GetLanguage(), content, funcLine)
+}
+
+// resolveStartWithTreeSitterTS returns the 1-based start line (including any
+// leading comment block) for the TypeScript definition whose first line is funcLine.
+func resolveStartWithTreeSitterTS(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(typescript.GetLanguage(), content, funcLine)
+}
+
+// resolveStartWithTreeSitterHS returns the 1-based start line (including any
+// leading comment block) for the Haskell definition whose first line is funcLine.
+func resolveStartWithTreeSitterHS(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(sitter.NewLanguage(haskell.Language()), content, funcLine)
+}
+
+// resolveStartWithTreeSitterKotlin returns the 1-based start line (including any
+// leading comment block) for the Kotlin definition whose first line is funcLine.
+func resolveStartWithTreeSitterKotlin(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(kotlin.GetLanguage(), content, funcLine)
+}
+
+// resolveStartWithTreeSitterPHP returns the 1-based start line (including any
+// leading comment block) for the PHP definition whose first line is funcLine.
+func resolveStartWithTreeSitterPHP(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(php.GetLanguage(), content, funcLine)
+}
+
+// resolveStartWithTreeSitterOCaml returns the 1-based start line (including any
+// leading comment block) for the OCaml (.ml) definition whose first line is funcLine.
+func resolveStartWithTreeSitterOCaml(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), content, funcLine)
+}
+
+// resolveStartWithTreeSitterOCamlInterface returns the 1-based start line
+// (including any leading comment block) for the OCaml (.mli) definition whose
+// first line is funcLine.
+func resolveStartWithTreeSitterOCamlInterface(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), content, funcLine)
+}
+
 // findDefinitionNodeAtRow returns the outermost node of one of the given
 // definition types whose start row matches row (0-indexed). Falls back to
 // any named node at that row if no definition-type node is found.

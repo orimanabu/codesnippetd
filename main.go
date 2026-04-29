@@ -375,6 +375,32 @@ type LineRange struct {
 	End   int    `json:"end"`
 }
 
+// isCommentLine reports whether s (already trimmed of leading whitespace) is a
+// single-line comment in a supported language.
+func isCommentLine(s string) bool {
+	return strings.HasPrefix(s, "//") || // Go, Rust, JS, TS, Kotlin, PHP, Java, C++
+		strings.HasPrefix(s, "#") || // Python, Ruby, Shell
+		strings.HasPrefix(s, "--") || // Haskell, SQL, Lua
+		strings.HasPrefix(s, "* ") || // block comment continuation (e.g. /* ... */ bodies)
+		strings.HasPrefix(s, "/*") || // block comment start
+		strings.HasPrefix(s, "(*") // OCaml
+}
+
+// scanLeadingComments walks backward from startLine (1-based) through lines and
+// returns the new start line extended to include any immediately preceding comment
+// lines. Only contiguous comment lines with no blank line between them are included.
+func scanLeadingComments(lines []string, startLine int) int {
+	for startLine > 1 {
+		prev := strings.TrimSpace(lines[startLine-2]) // lines is 0-indexed
+		if isCommentLine(prev) {
+			startLine--
+		} else {
+			break
+		}
+	}
+	return startLine
+}
+
 // normalizeTagPattern strips ctags regex anchors (^ prefix, $ suffix) and
 // unescapes common regex metacharacters so the result can be used with
 // strings.Contains for line matching.
@@ -429,65 +455,99 @@ func resolveFilePath(contextDir, tagPath string) string {
 // called on ctx so that the access log middleware can record the fact.
 func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
 	filePath := resolveFilePath(contextDir, tag.Path)
-	needFile := tag.Line == 0 && tag.Pattern != ""
 
 	var lines []string
-	if needFile {
-		data, readErr := os.ReadFile(filePath)
-		if readErr != nil {
-			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
+	var data []byte
+
+	if tag.Line == 0 && tag.Pattern != "" {
+		data, err = os.ReadFile(filePath)
+		if err != nil {
+			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
 		}
 		lines = strings.Split(string(data), "\n")
 	}
 
-	startLine = tag.Line
-	if startLine == 0 && tag.Pattern != "" {
-		startLine = findPatternLine(lines, tag.Pattern)
+	// funcLine is the line where the definition itself begins (used for tree-sitter).
+	funcLine := tag.Line
+	if funcLine == 0 && tag.Pattern != "" {
+		funcLine = findPatternLine(lines, tag.Pattern)
 	}
-	if startLine <= 0 {
+	if funcLine <= 0 {
 		return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
 	}
 
-	if endStr, ok := tag.Extra["end"]; ok {
-		if n, err := strconv.Atoi(endStr); err == nil {
-			endLine = n
-			return startLine, endLine, nil
-		}
-	}
-
-	// end field absent: read the file (if not already read) and try tree-sitter.
-	var data []byte
+	// Ensure file is loaded so we can scan for leading comment lines.
 	if lines == nil {
-		var readErr error
-		data, readErr = os.ReadFile(filePath)
-		if readErr != nil {
-			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
+		data, err = os.ReadFile(filePath)
+		if err != nil {
+			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
 		}
 		lines = strings.Split(string(data), "\n")
-	} else {
+	} else if data == nil {
 		data = []byte(strings.Join(lines, "\n"))
 	}
 
+	// Extend start upward to include any immediately preceding comment block.
+	// For tree-sitter-supported languages use the AST (handles block comments
+	// and is language-aware); fall back to heuristic string matching otherwise.
+	startLine = funcLine
+	if useTreeSitter {
+		var tsStart int
+		var tsErr error
+		switch {
+		case isRustFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
+		case isJSFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterJS(data, funcLine)
+		case isTSFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterTS(data, funcLine)
+		case isHSFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterHS(data, funcLine)
+		case isKtFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterKotlin(data, funcLine)
+		case isPHPFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterPHP(data, funcLine)
+		case isMLFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterOCaml(data, funcLine)
+		case isMLIFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterOCamlInterface(data, funcLine)
+		default:
+			startLine = scanLeadingComments(lines, funcLine)
+		}
+		if tsErr == nil && tsStart > 0 {
+			startLine = tsStart
+		}
+	} else {
+		startLine = scanLeadingComments(lines, funcLine)
+	}
+
+	if endStr, ok := tag.Extra["end"]; ok {
+		if n, parseErr := strconv.Atoi(endStr); parseErr == nil {
+			return startLine, n, nil
+		}
+	}
+
+	// end field absent: try tree-sitter using funcLine (the definition start, not the comment).
 	if useTreeSitter {
 		var tsEnd int
 		var tsErr error
 		switch {
 		case isRustFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterJS(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterJS(data, funcLine)
 		case isTSFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterTS(data, funcLine)
 		case isHSFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterHS(data, funcLine)
 		case isKtFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, funcLine)
 		case isPHPFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, funcLine)
 		case isMLFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, funcLine)
 		case isMLIFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, startLine)
+			tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, funcLine)
 		}
 		if tsErr == nil && tsEnd > 0 {
 			markTreeSitterUsed(ctx)

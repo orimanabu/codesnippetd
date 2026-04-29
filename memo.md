@@ -12280,3 +12280,416 @@ Sitterパーザを使わず、ctagsパーザのみを使う動きにしてくだ
 
 ✻ Cooked for 47s
 ```
+
+```
+❯ 関数定義の直前(上)に、空行を挟まずコメントが書いてあれば、コメントを含めてstartを返すことはできますか？例えば下の例だと、今は2行目がstartになりますが、1行目をstartにしたいです
+// Name returns the name of the runtime being wrapped by Conmon.
+func (r *ConmonOCIRuntime) Name() string {
+        return r.name
+}
+
+⏺ コードベースを確認して、関数定義のstart位置の決定ロジックを調べます。
+
+  Searched for 2 patterns, read 2 files (ctrl+o to expand)
+
+⏺ 可能です。resolveStartEnd で startLine を決定した後、直前の行が空行なしのコメントであれば startLine を上に伸ばす処理を追加できます。
+
+  実装します。tree-sitter には元の関数定義行を渡す必要があるため、funcLine（定義行）と startLine（コメント込み）を分けます。
+
+⏺ Update(main.go)
+  ⎿  Added 26 lines
+      375    End   int    `json:"end"`
+      376  }
+      377
+      378 +// isCommentLine reports whether s (already trimmed of leading whitespace) is a
+      379 +// single-line comment in a supported language.
+      380 +func isCommentLine(s string) bool {
+      381 +  return strings.HasPrefix(s, "//") || // Go, Rust, JS, TS, Kotlin, PHP, Java, C++
+      382 +    strings.HasPrefix(s, "#") || // Python, Ruby, Shell
+      383 +    strings.HasPrefix(s, "--") || // Haskell, SQL, Lua
+      384 +    strings.HasPrefix(s, "* ") || // block comment continuation (e.g. /* ... */ bodies)
+      385 +    strings.HasPrefix(s, "/*") || // block comment start
+      386 +    strings.HasPrefix(s, "(*") // OCaml
+      387 +}
+      388 +
+      389 +// scanLeadingComments walks backward from startLine (1-based) through lines and
+      390 +// returns the new start line extended to include any immediately preceding comment
+      391 +// lines. Only contiguous comment lines with no blank line between them are included.
+      392 +func scanLeadingComments(lines []string, startLine int) int {
+      393 +  for startLine > 1 {
+      394 +    prev := strings.TrimSpace(lines[startLine-2]) // lines is 0-indexed
+      395 +    if isCommentLine(prev) {
+      396 +      startLine--
+      397 +    } else {
+      398 +      break
+      399 +    }
+      400 +  }
+      401 +  return startLine
+      402 +}
+      403 +
+      404  // normalizeTagPattern strips ctags regex anchors (^ prefix, $ suffix) and
+      405  // unescapes common regex metacharacters so the result can be used with
+      406  // strings.Contains for line matching.
+
+⏺ 次に resolveStartEnd を修正します。funcLine（定義行）と startLine（コメント込み）を分けて管理します。
+
+⏺ Update(main.go)
+  ⎿  Added 34 lines, removed 31 lines
+      455  // called on ctx so that the access log middleware can record the fact.
+      456  func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+      457    filePath := resolveFilePath(contextDir, tag.Path)
+      458 -  needFile := tag.Line == 0 && tag.Pattern != ""
+      458
+      459    var lines []string
+      461 -  if needFile {
+      462 -    data, readErr := os.ReadFile(filePath)
+      463 -    if readErr != nil {
+      464 -      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
+      460 +  var data []byte
+      461 +
+      462 +  if tag.Line == 0 && tag.Pattern != "" {
+      463 +    data, err = os.ReadFile(filePath)
+      464 +    if err != nil {
+      465 +      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
+      466      }
+      467      lines = strings.Split(string(data), "\n")
+      468    }
+      469
+      469 -  startLine = tag.Line
+      470 -  if startLine == 0 && tag.Pattern != "" {
+      471 -    startLine = findPatternLine(lines, tag.Pattern)
+      470 +  // funcLine is the line where the definition itself begins (used for tree-sitter).
+      471 +  funcLine := tag.Line
+      472 +  if funcLine == 0 && tag.Pattern != "" {
+      473 +    funcLine = findPatternLine(lines, tag.Pattern)
+      474    }
+      473 -  if startLine <= 0 {
+      475 +  if funcLine <= 0 {
+      476      return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
+      477    }
+      478
+      477 -  if endStr, ok := tag.Extra["end"]; ok {
+      478 -    if n, err := strconv.Atoi(endStr); err == nil {
+      479 -      endLine = n
+      480 -      return startLine, endLine, nil
+      481 -    }
+      482 -  }
+      483 -
+      484 -  // end field absent: read the file (if not already read) and try tree-sitter.
+      485 -  var data []byte
+      479 +  // Ensure file is loaded so we can scan for leading comment lines.
+      480    if lines == nil {
+      487 -    var readErr error
+      488 -    data, readErr = os.ReadFile(filePath)
+      489 -    if readErr != nil {
+      490 -      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, readErr)
+      481 +    data, err = os.ReadFile(filePath)
+      482 +    if err != nil {
+      483 +      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
+      484      }
+      485      lines = strings.Split(string(data), "\n")
+      493 -  } else {
+      486 +  } else if data == nil {
+      487      data = []byte(strings.Join(lines, "\n"))
+      488    }
+      489
+      490 +  // Extend start upward to include any immediately preceding comment block.
+      491 +  startLine = scanLeadingComments(lines, funcLine)
+      492 +
+      493 +  if endStr, ok := tag.Extra["end"]; ok {
+      494 +    if n, parseErr := strconv.Atoi(endStr); parseErr == nil {
+      495 +      return startLine, n, nil
+      496 +    }
+      497 +  }
+      498 +
+      499 +  // end field absent: try tree-sitter using funcLine (the definition start, not the comment).
+      500    if useTreeSitter {
+      501      var tsEnd int
+      502      var tsErr error
+      503      switch {
+      504      case isRustFile(tag.Path):
+      502 -      tsEnd, tsErr = resolveEndWithTreeSitterRust(data, startLine)
+      505 +      tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
+      506      case isJSFile(tag.Path):
+      504 -      tsEnd, tsErr = resolveEndWithTreeSitterJS(data, startLine)
+      507 +      tsEnd, tsErr = resolveEndWithTreeSitterJS(data, funcLine)
+      508      case isTSFile(tag.Path):
+      506 -      tsEnd, tsErr = resolveEndWithTreeSitterTS(data, startLine)
+      509 +      tsEnd, tsErr = resolveEndWithTreeSitterTS(data, funcLine)
+      510      case isHSFile(tag.Path):
+      508 -      tsEnd, tsErr = resolveEndWithTreeSitterHS(data, startLine)
+      511 +      tsEnd, tsErr = resolveEndWithTreeSitterHS(data, funcLine)
+      512      case isKtFile(tag.Path):
+      510 -      tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, startLine)
+      513 +      tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, funcLine)
+      514      case isPHPFile(tag.Path):
+      512 -      tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, startLine)
+      515 +      tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, funcLine)
+      516      case isMLFile(tag.Path):
+      514 -      tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, startLine)
+      517 +      tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, funcLine)
+      518      case isMLIFile(tag.Path):
+      516 -      tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, startLine)
+      519 +      tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, funcLine)
+      520      }
+      521      if tsErr == nil && tsEnd > 0 {
+      522        markTreeSitterUsed(ctx)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./...)
+  ⎿  (No output)
+
+⏺ ビルド成功です（unusedfunc の診断は linter の誤検知です）。
+
+  テストも確認します。
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.900s
+
+⏺ 全テスト通過です。
+
+  実装の概要
+
+  追加した関数 (main.go:370-392):
+  - isCommentLine(s string) bool — //, #, --, /*, (*, *  を1行コメントとして検出
+  - scanLeadingComments(lines []string, startLine int) int — startLine の直前を遡り、空行なしで続くコメント行を全て含めた新しい start を返す
+
+  変更した関数 resolveStartEnd:
+  - funcLine = 関数定義の実際の行（tree-sitter に渡す用）
+  - startLine = scanLeadingComments(lines, funcLine) で返り値の start をコメント行まで拡張
+  - tree-sitter には funcLine を渡す（コメント行を関数定義と誤認しないため）
+  - ファイルは常に読み込んで scanLeadingComments を実行できるようにした
+
+  ご質問の例だと：
+  // Name returns the name of the runtime being wrapped by Conmon.  ← start (旧: 2行目)
+  func (r *ConmonOCIRuntime) Name() string {                        ← funcLine
+          return r.name
+  }
+
+✻ Worked for 2m 31s
+
+❯ この動きはTreeSitterを使わない言語でも有効ですか
+
+⏺ はい、有効です。
+
+  scanLeadingComments の呼び出しは useTreeSitter の条件ブロックの外側にあります。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 491行目の scanLeadingComments は useTreeSitter の if ブロックより前にあり、常に実行されます。
+
+  tree-sitter 非対応言語（Go, Python, C, Java など ctags のみで処理される言語）でも、funcLine が決まった時点でコメントの遡りが走るので、同じ動作になります。
+
+❯ コメント行かどうかの判断に、今は固定の文字列とのマッチで判断していますが、そうではなく言語ごとにコメントかどうかをTreeSitterの能力を使って判断することはできますか
+
+⏺ 可能です。tree-sitter はAST上でノードの型（comment, line_comment, block_comment 等）を持っているので、文字列マッチの代わりにそれを使えます。
+
+  方針：
+
+  1. treesitter.go に resolveStartWithTreeSitter 系関数を追加
+    - ファイルをパースし、funcLine の直前を遡りながらノード型がコメントかを判定
+    - ブロックコメント（複数行にまたがる）も正しく扱える
+  2. main.go の resolveStartEnd で、tree-sitter 対応言語なら tree-sitter で、それ以外は現在の文字列マッチでフォールバック
+
+  実装します。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(treesitter.go)
+  ⎿  Added 113 lines
+       62    "internal_module":         true,
+       63  }
+       64
+       65 +// isCommentNodeType reports whether nodeType represents a comment node in any
+       66 +// of the tree-sitter grammars used by this program.
+       67 +func isCommentNodeType(nodeType string) bool {
+       68 +  switch nodeType {
+       69 +  case "comment",           // Go, JS, TS, PHP, OCaml
+       70 +    "line_comment",       // Rust, Kotlin
+       71 +    "block_comment",      // Rust, Kotlin
+       72 +    "multiline_comment",  // some grammars
+       73 +    "shell_comment",      // PHP (#!)
+       74 +    "doc_comment":        // some grammars
+       75 +    return true
+       76 +  }
+       77 +  return false
+       78 +}
+       79 +
+       80 +// rowHasCommentNode reports whether any node in the subtree rooted at n covers
+       81 +// row (0-based) and is a comment node type. Block comments that span multiple
+       82 +// rows are detected correctly because the check uses the node's full span.
+       83 +func rowHasCommentNode(n *sitter.Node, row uint32) bool {
+       84 +  if isCommentNodeType(n.Type()) && n.StartPoint().Row <= row && n.EndPoint().Row >= row {
+       85 +    return true
+       86 +  }
+       87 +  for i := range int(n.ChildCount()) {
+       88 +    child := n.Child(i)
+       89 +    if child.StartPoint().Row > row {
+       90 +      break
+       91 +    }
+       92 +    if child.EndPoint().Row < row {
+       93 +      continue
+       94 +    }
+       95 +    if rowHasCommentNode(child, row) {
+       96 +      return true
+       97 +    }
+       98 +  }
+       99 +  return false
+      100 +}
+      101 +
+      102 +// findCommentStartRow walks backward from funcRow (0-based) and returns the
+      103 +// earliest row that belongs to a contiguous block of comment lines immediately
+      104 +// preceding funcRow (no blank lines between the comment block and the
+      105 +// definition). Returns funcRow if there are no preceding comment lines.
+      106 +func findCommentStartRow(root *sitter.Node, funcRow uint32) uint32 {
+      107 +  row := funcRow
+      108 +  for row > 0 && rowHasCommentNode(root, row-1) {
+      109 +    row--
+      110 +  }
+      111 +  return row
+      112 +}
+      113 +
+      114 +// resolveStartWithTreeSitter parses content with lang and returns the 1-based
+      115 +// start line including any leading comment block immediately before funcLine
+      116 +// (1-based). Returns funcLine unchanged on error.
+      117 +func resolveStartWithTreeSitter(lang *sitter.Language, content []byte, funcLine int) (int, error) {
+      118 +  parser := sitter.NewParser()
+      119 +  parser.SetLanguage(lang)
+      120 +  tree, err := parser.ParseCtx(context.Background(), nil, content)
+      121 +  if err != nil {
+      122 +    return funcLine, fmt.Errorf("tree-sitter parse: %w", err)
+      123 +  }
+      124 +  defer tree.Close()
+      125 +  startRow := findCommentStartRow(tree.RootNode(), uint32(funcLine-1))
+      126 +  return int(startRow) + 1, nil
+      127 +}
+      128 +
+      129 +// resolveStartWithTreeSitterRust returns the 1-based start line (including any
+      130 +// leading comment block) for the Rust definition whose first line is funcLine.
+      131 +func resolveStartWithTreeSitterRust(content []byte, funcLine int) (int, error) {
+      132 +  return resolveStartWithTreeSitter(rust.GetLanguage(), content, funcLine)
+      133 +}
+      134 +
+      135 +// resolveStartWithTreeSitterJS returns the 1-based start line (including any
+      136 +// leading comment block) for the JavaScript definition whose first line is funcLine.
+      137 +func resolveStartWithTreeSitterJS(content []byte, funcLine int) (int, error) {
+      138 +  return resolveStartWithTreeSitter(javascript.GetLanguage(), content, funcLine)
+      139 +}
+      140 +
+      141 +// resolveStartWithTreeSitterTS returns the 1-based start line (including any
+      142 +// leading comment block) for the TypeScript definition whose first line is funcLine.
+      143 +func resolveStartWithTreeSitterTS(content []byte, funcLine int) (int, error) {
+      144 +  return resolveStartWithTreeSitter(typescript.GetLanguage(), content, funcLine)
+      145 +}
+      146 +
+      147 +// resolveStartWithTreeSitterHS returns the 1-based start line (including any
+      148 +// leading comment block) for the Haskell definition whose first line is funcLine.
+      149 +func resolveStartWithTreeSitterHS(content []byte, funcLine int) (int, error) {
+      150 +  return resolveStartWithTreeSitter(sitter.NewLanguage(haskell.Language()), content, funcLine)
+      151 +}
+      152 +
+      153 +// resolveStartWithTreeSitterKotlin returns the 1-based start line (including any
+      154 +// leading comment block) for the Kotlin definition whose first line is funcLine.
+      155 +func resolveStartWithTreeSitterKotlin(content []byte, funcLine int) (int, error) {
+      156 +  return resolveStartWithTreeSitter(kotlin.GetLanguage(), content, funcLine)
+      157 +}
+      158 +
+      159 +// resolveStartWithTreeSitterPHP returns the 1-based start line (including any
+      160 +// leading comment block) for the PHP definition whose first line is funcLine.
+      161 +func resolveStartWithTreeSitterPHP(content []byte, funcLine int) (int, error) {
+      162 +  return resolveStartWithTreeSitter(php.GetLanguage(), content, funcLine)
+      163 +}
+      164 +
+      165 +// resolveStartWithTreeSitterOCaml returns the 1-based start line (including any
+      166 +// leading comment block) for the OCaml (.ml) definition whose first line is funcLine.
+      167 +func resolveStartWithTreeSitterOCaml(content []byte, funcLine int) (int, error) {
+      168 +  return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), content, funcLine)
+      169 +}
+      170 +
+      171 +// resolveStartWithTreeSitterOCamlInterface returns the 1-based start line
+      172 +// (including any leading comment block) for the OCaml (.mli) definition whose
+      173 +// first line is funcLine.
+      174 +func resolveStartWithTreeSitterOCamlInterface(content []byte, funcLine int) (int, error) {
+      175 +  return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), content, funcLine)
+      176 +}
+      177 +
+      178  // findDefinitionNodeAtRow returns the outermost node of one of the given
+      179  // definition types whose start row matches row (0-indexed). Falls back to
+      180  // any named node at that row if no definition-type node is found.
+
+⏺ 次に main.go の resolveStartEnd を修正して、tree-sitter 対応言語では tree-sitter でコメントを判定し、それ以外は文字列マッチにフォールバックするようにします。
+
+⏺ Update(main.go)
+  ⎿  Added 32 lines, removed 1 line
+      488    }
+      489
+      490    // Extend start upward to include any immediately preceding comment block.
+      491 -  startLine = scanLeadingComments(lines, funcLine)
+      491 +  // For tree-sitter-supported languages use the AST (handles block comments
+      492 +  // and is language-aware); fall back to heuristic string matching otherwise.
+      493 +  startLine = funcLine
+      494 +  if useTreeSitter {
+      495 +    var tsStart int
+      496 +    var tsErr error
+      497 +    switch {
+      498 +    case isRustFile(tag.Path):
+      499 +      tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
+      500 +    case isJSFile(tag.Path):
+      501 +      tsStart, tsErr = resolveStartWithTreeSitterJS(data, funcLine)
+      502 +    case isTSFile(tag.Path):
+      503 +      tsStart, tsErr = resolveStartWithTreeSitterTS(data, funcLine)
+      504 +    case isHSFile(tag.Path):
+      505 +      tsStart, tsErr = resolveStartWithTreeSitterHS(data, funcLine)
+      506 +    case isKtFile(tag.Path):
+      507 +      tsStart, tsErr = resolveStartWithTreeSitterKotlin(data, funcLine)
+      508 +    case isPHPFile(tag.Path):
+      509 +      tsStart, tsErr = resolveStartWithTreeSitterPHP(data, funcLine)
+      510 +    case isMLFile(tag.Path):
+      511 +      tsStart, tsErr = resolveStartWithTreeSitterOCaml(data, funcLine)
+      512 +    case isMLIFile(tag.Path):
+      513 +      tsStart, tsErr = resolveStartWithTreeSitterOCamlInterface(data, funcLine)
+      514 +    default:
+      515 +      startLine = scanLeadingComments(lines, funcLine)
+      516 +    }
+      517 +    if tsErr == nil && tsStart > 0 {
+      518 +      startLine = tsStart
+      519 +    }
+      520 +  } else {
+      521 +    startLine = scanLeadingComments(lines, funcLine)
+      522 +  }
+      523
+      524    if endStr, ok := tag.Extra["end"]; ok {
+      525      if n, parseErr := strconv.Atoi(endStr); parseErr == nil {
+  ⎿  Found 17 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Bash(go build ./... && go test ./...)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.861s
+
+⏺ ビルド・テスト通過です（unusedfunc 診断は linter の誤検知で、実際には main.go から呼ばれています）。
+
+  実装の概要
+
+  treesitter.go に追加した関数：
+
+  ┌─────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────┐
+  │                        関数                         │                               役割                               │
+  ├─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ isCommentNodeType(nodeType)                         │ AST ノード型名がコメントかを判定                                 │
+  ├─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ rowHasCommentNode(n, row)                           │ 指定行にコメントノードがあるか再帰検索（ブロックコメントも対応） │
+  ├─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ findCommentStartRow(root, funcRow)                  │ funcRow の直前を遡り連続するコメント行の先頭 row を返す          │
+  ├─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ resolveStartWithTreeSitter(lang, content, funcLine) │ 上記を使って start 行を計算する汎用関数                          │
+  ├─────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ resolveStartWithTreeSitterXxx(...)                  │ 各言語のラッパー                                                 │
+  └─────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┘
+
+  ブロックコメントへの対応：
+  rowHasCommentNode は node.StartPoint().Row <= row && node.EndPoint().Row >= row で判定するため、複数行にまたがるブロックコメントも正しく検出できます。
+
+  フォールバック：
+  tree-sitter 非対応言語（Go など ctags のみの言語）は引き続き scanLeadingComments の文字列マッチを使います。
+
+✻ Baked for 2m 3s
+```
