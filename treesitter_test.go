@@ -3699,3 +3699,223 @@ func TestLinesHandler_CppFile_UsesTreeSitter(t *testing.T) {
 		}
 	})
 }
+
+// sample Lua source used across unit tests.
+// Line numbers (1-based):
+//
+//	 1: -- greet returns a greeting string
+//	 2: function greet(name)
+//	 3:   return "Hello, " .. name
+//	 4: end
+//	 5: (blank)
+//	 6: -- add returns the sum of two numbers
+//	 7: local function add(a, b)
+//	 8:   return a + b
+//	 9: end
+//	10: (blank)
+//	11: function Point.new(x, y)
+//	12:   local self = setmetatable({}, Point)
+//	13:   self.x = x
+//	14:   self.y = y
+//	15:   return self
+//	16: end
+var luaSample = []byte(`-- greet returns a greeting string
+function greet(name)
+  return "Hello, " .. name
+end
+
+-- add returns the sum of two numbers
+local function add(a, b)
+  return a + b
+end
+
+function Point.new(x, y)
+  local self = setmetatable({}, Point)
+  self.x = x
+  self.y = y
+  return self
+end
+`)
+
+// ---- resolveEndWithTreeSitterLua tests ----
+
+func TestResolveEndWithTreeSitterLua_GlobalFunction(t *testing.T) {
+	// function greet starts at line 2 (ctags line), ends at line 4
+	end, err := resolveEndWithTreeSitterLua(luaSample, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 4 {
+		t.Errorf("end: got %d, want 4", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterLua_LocalFunction(t *testing.T) {
+	// local function add starts at line 7, ends at line 9
+	end, err := resolveEndWithTreeSitterLua(luaSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 9 {
+		t.Errorf("end: got %d, want 9", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterLua_DotFunction(t *testing.T) {
+	// function Point.new starts at line 11, ends at line 16
+	end, err := resolveEndWithTreeSitterLua(luaSample, 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 16 {
+		t.Errorf("end: got %d, want 16", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterLua_LineNotFound(t *testing.T) {
+	// line 5 is blank — no function starts there
+	_, err := resolveEndWithTreeSitterLua(luaSample, 5)
+	if err == nil {
+		t.Fatal("expected error for blank line with no function")
+	}
+}
+
+// ---- resolveStartWithTreeSitterLua tests ----
+
+func TestResolveStartWithTreeSitterLua_GlobalFunctionWithComment(t *testing.T) {
+	// greet at line 2 has leading comment at line 1 → start = 1
+	start, err := resolveStartWithTreeSitterLua(luaSample, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if start != 1 {
+		t.Errorf("start: got %d, want 1", start)
+	}
+}
+
+func TestResolveStartWithTreeSitterLua_LocalFunctionWithComment(t *testing.T) {
+	// add at line 7 has leading comment at line 6 → start = 6
+	start, err := resolveStartWithTreeSitterLua(luaSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if start != 6 {
+		t.Errorf("start: got %d, want 6", start)
+	}
+}
+
+func TestResolveStartWithTreeSitterLua_FunctionNoComment(t *testing.T) {
+	// Point.new at line 11 has no leading comment → start = 11
+	start, err := resolveStartWithTreeSitterLua(luaSample, 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if start != 11 {
+		t.Errorf("start: got %d, want 11", start)
+	}
+}
+
+// ---- Lua handler tests ----
+
+func TestSnippetHandler_LuaFile_GlobalFunction(t *testing.T) {
+	// greet has leading comment on line 1.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=lua")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 1 || snippets[0].End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 1/4", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_LuaFile_LocalFunction(t *testing.T) {
+	// add has leading comment on line 6.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=lua")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 6 || snippets[0].End != 9 {
+			t.Errorf("Start/End: got %d/%d, want 6/9", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_LuaFile_DotFunction(t *testing.T) {
+	// Point.new has no leading comment.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/new?context=lua")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 11 || snippets[0].End != 16 {
+			t.Errorf("Start/End: got %d/%d, want 11/16", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_LuaFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/greet?context=lua")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 1 || ranges[0].End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 1/4", ranges[0].Start, ranges[0].End)
+		}
+	})
+}

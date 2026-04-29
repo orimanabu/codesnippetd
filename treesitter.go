@@ -11,6 +11,7 @@ import (
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/lua"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/ruby"
 	"github.com/smacker/go-tree-sitter/kotlin"
@@ -536,4 +537,112 @@ func resolveEndWithTreeSitterCpp(content []byte, startLine int) (int, error) {
 // leading comment block) for the C++ definition whose first line is funcLine.
 func resolveStartWithTreeSitterCpp(content []byte, funcLine int) (int, error) {
 	return resolveStartWithTreeSitter(cpp.GetLanguage(), content, funcLine)
+}
+
+// isLuaFile reports whether path is a Lua source file.
+func isLuaFile(path string) bool {
+	return filepath.Ext(path) == ".lua"
+}
+
+// luaDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Lua source files.
+var luaDefinitionTypes = map[string]bool{
+	"function_statement": true,
+}
+
+// rowEndsWithCommentNode reports whether any comment node in the subtree
+// rooted at n has its last row equal to row (0-based). This is used for Lua
+// because the Lua grammar attaches preceding newlines to comment nodes,
+// causing StartPoint().Row to precede the actual comment text. EndPoint().Row
+// always corresponds to the line containing the comment text.
+func rowEndsWithCommentNode(n *sitter.Node, row uint32) bool {
+	if isCommentNodeType(n.Type()) && n.EndPoint().Row == row {
+		return true
+	}
+	for i := range int(n.ChildCount()) {
+		child := n.Child(i)
+		if child.EndPoint().Row < row || child.StartPoint().Row > row {
+			continue
+		}
+		if rowEndsWithCommentNode(child, row) {
+			return true
+		}
+	}
+	return false
+}
+
+// findCommentStartRowLua walks backward from funcRow (0-based) and returns the
+// earliest row that is immediately preceded by a comment whose text ends on
+// that row (using end-row matching to handle the Lua grammar's leading-newline
+// quirk). Returns funcRow if no preceding comment lines exist.
+func findCommentStartRowLua(root *sitter.Node, funcRow uint32) uint32 {
+	row := funcRow
+	for row > 0 && rowEndsWithCommentNode(root, row-1) {
+		row--
+	}
+	return row
+}
+
+// findLuaFunctionStatementByFunctionStartRow searches the subtree rooted at n
+// for a function_statement node whose function_start child has its EndPoint on
+// the given row (0-based). The Lua grammar attaches leading newlines to the
+// function_statement and function_start nodes, so StartPoint().Row of those
+// nodes does not match the actual "function" keyword line; EndPoint().Row of
+// function_start does.
+func findLuaFunctionStatementByFunctionStartRow(n *sitter.Node, row uint32) *sitter.Node {
+	if n.Type() == "function_statement" {
+		for i := range int(n.ChildCount()) {
+			child := n.Child(i)
+			if child.Type() == "function_start" && child.EndPoint().Row == row {
+				return n
+			}
+		}
+	}
+	for i := range int(n.ChildCount()) {
+		child := n.Child(i)
+		if child.StartPoint().Row > row || child.EndPoint().Row < row {
+			continue
+		}
+		if result := findLuaFunctionStatementByFunctionStartRow(child, row); result != nil {
+			return result
+		}
+	}
+	return nil
+}
+
+// resolveEndWithTreeSitterLua returns the 1-based end line of the Lua function
+// definition starting at startLine (1-based). It uses a Lua-specific node
+// search because the Lua tree-sitter grammar attaches leading newlines to
+// function_statement nodes, making their StartPoint().Row differ from the
+// actual "function" keyword line reported by ctags.
+func resolveEndWithTreeSitterLua(content []byte, startLine int) (int, error) {
+	parser := sitter.NewParser()
+	parser.SetLanguage(lua.GetLanguage())
+	tree, err := parser.ParseCtx(context.Background(), nil, content)
+	if err != nil {
+		return 0, fmt.Errorf("tree-sitter parse: %w", err)
+	}
+	defer tree.Close()
+	targetRow := uint32(startLine - 1)
+	node := findLuaFunctionStatementByFunctionStartRow(tree.RootNode(), targetRow)
+	if node == nil {
+		return 0, fmt.Errorf("no Lua function found at line %d", startLine)
+	}
+	return int(node.EndPoint().Row) + 1, nil
+}
+
+// resolveStartWithTreeSitterLua returns the 1-based start line (including any
+// leading comment block) for the Lua function whose first line is funcLine.
+// It uses end-row matching for comments to work around the Lua grammar's
+// leading-newline quirk.
+func resolveStartWithTreeSitterLua(content []byte, funcLine int) (int, error) {
+	parser := sitter.NewParser()
+	parser.SetLanguage(lua.GetLanguage())
+	tree, err := parser.ParseCtx(context.Background(), nil, content)
+	if err != nil {
+		return funcLine, fmt.Errorf("tree-sitter parse: %w", err)
+	}
+	defer tree.Close()
+	startRow := findCommentStartRowLua(tree.RootNode(), uint32(funcLine-1))
+	return int(startRow) + 1, nil
 }

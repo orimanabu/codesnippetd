@@ -523,6 +523,8 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 			tsStart, tsErr = resolveStartWithTreeSitterOCaml(data, funcLine)
 		case isMLIFile(tag.Path):
 			tsStart, tsErr = resolveStartWithTreeSitterOCamlInterface(data, funcLine)
+		case isLuaFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterLua(data, funcLine)
 		default:
 			startLine = scanLeadingComments(lines, funcLine)
 		}
@@ -572,6 +574,8 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 			tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, funcLine)
 		case isMLIFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, funcLine)
+		case isLuaFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterLua(data, funcLine)
 		}
 		if tsErr == nil && tsEnd > 0 {
 			markTreeSitterUsed(ctx)
