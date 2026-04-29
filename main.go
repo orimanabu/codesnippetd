@@ -499,6 +499,8 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 			tsStart, tsErr = resolveStartWithTreeSitterGo(data, funcLine)
 		case isPyFile(tag.Path):
 			tsStart, tsErr = resolveStartWithTreeSitterPython(data, funcLine)
+		case isRbFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterRuby(data, funcLine)
 		case isRustFile(tag.Path):
 			tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):
@@ -540,6 +542,8 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 			tsEnd, tsErr = resolveEndWithTreeSitterGo(data, funcLine)
 		case isPyFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterPython(data, funcLine)
+		case isRbFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterRuby(data, funcLine)
 		case isRustFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):

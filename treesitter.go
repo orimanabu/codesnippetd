@@ -9,6 +9,7 @@ import (
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/python"
+	"github.com/smacker/go-tree-sitter/ruby"
 	"github.com/smacker/go-tree-sitter/kotlin"
 	"github.com/smacker/go-tree-sitter/php"
 	"github.com/smacker/go-tree-sitter/rust"
@@ -68,6 +69,34 @@ func resolveEndWithTreeSitterPython(content []byte, startLine int) (int, error) 
 // funcLine.
 func resolveStartWithTreeSitterPython(content []byte, funcLine int) (int, error) {
 	return resolveStartWithTreeSitter(python.GetLanguage(), content, funcLine)
+}
+
+// rubyDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Ruby source files.
+var rubyDefinitionTypes = map[string]bool{
+	"method":           true,
+	"singleton_method": true,
+	"class":            true,
+	"module":           true,
+	"singleton_class":  true,
+}
+
+// isRbFile reports whether path is a Ruby source file.
+func isRbFile(path string) bool {
+	return filepath.Ext(path) == ".rb"
+}
+
+// resolveEndWithTreeSitterRuby returns the 1-based end line of the Ruby
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterRuby(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(ruby.GetLanguage(), rubyDefinitionTypes, content, startLine)
+}
+
+// resolveStartWithTreeSitterRuby returns the 1-based start line (including
+// any leading comment block) for the Ruby definition whose first line is
+// funcLine.
+func resolveStartWithTreeSitterRuby(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(ruby.GetLanguage(), content, funcLine)
 }
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as

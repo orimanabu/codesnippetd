@@ -1,0 +1,10 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_NAME	Universal Ctags	//
+Point	sample.rb	/^class Point$/;"	kind:class	line:12	language:Ruby
+Shape	sample.rb	/^module Shape$/;"	kind:module	line:26	language:Ruby
+add	sample.rb	/^def add(a, b)$/;"	kind:method	line:7	language:Ruby
+area	sample.rb	/^  def area$/;"	kind:method	line:28	language:Ruby
+distance	sample.rb	/^  def distance$/;"	kind:method	line:20	language:Ruby
+greet	sample.rb	/^def greet(name)$/;"	kind:method	line:2	language:Ruby
+initialize	sample.rb	/^  def initialize(x, y)$/;"	kind:method	line:14	language:Ruby

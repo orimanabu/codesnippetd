@@ -819,6 +819,109 @@ func TestResolveEndWithTreeSitterHS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample Ruby source used across unit tests (no leading comments).
+var rbSample = []byte(`def greet(name)
+  "Hello, #{name}!"
+end
+
+def add(a, b)
+  a + b
+end
+
+class Point
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+
+  def distance
+    Math.sqrt(@x**2 + @y**2)
+  end
+end
+
+module Shape
+  def area
+    raise NotImplementedError
+  end
+end
+`)
+
+// ---- resolveEndWithTreeSitterRuby tests ----
+
+func TestResolveEndWithTreeSitterRuby_Function(t *testing.T) {
+	// def greet starts at line 1, ends at line 3
+	end, err := resolveEndWithTreeSitterRuby(rbSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 3 {
+		t.Errorf("end: got %d, want 3", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterRuby_SecondFunction(t *testing.T) {
+	// def add starts at line 5, ends at line 7
+	end, err := resolveEndWithTreeSitterRuby(rbSample, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 7 {
+		t.Errorf("end: got %d, want 7", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterRuby_Class(t *testing.T) {
+	// class Point starts at line 9, ends at line 18
+	end, err := resolveEndWithTreeSitterRuby(rbSample, 9)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 18 {
+		t.Errorf("end: got %d, want 18", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterRuby_Method(t *testing.T) {
+	// def initialize starts at line 10, ends at line 13
+	end, err := resolveEndWithTreeSitterRuby(rbSample, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 13 {
+		t.Errorf("end: got %d, want 13", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterRuby_SecondMethod(t *testing.T) {
+	// def distance starts at line 15, ends at line 17
+	end, err := resolveEndWithTreeSitterRuby(rbSample, 15)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 17 {
+		t.Errorf("end: got %d, want 17", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterRuby_Module(t *testing.T) {
+	// module Shape starts at line 20, ends at line 24
+	end, err := resolveEndWithTreeSitterRuby(rbSample, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 24 {
+		t.Errorf("end: got %d, want 24", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterRuby_LineNotFound(t *testing.T) {
+	// line 4 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterRuby(rbSample, 4)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // sample Python source used across unit tests (no leading comments).
 var pySample = []byte(`def greet(name):
     return "Hello, " + name + "!"
@@ -1201,6 +1304,25 @@ func TestIsKtFile(t *testing.T) {
 	}
 }
 
+func TestIsRbFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"app.rb", true},
+		{"src/lib.rb", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"script.py", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isRbFile(c.path); got != c.want {
+			t.Errorf("isRbFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
 func TestIsPyFile(t *testing.T) {
 	cases := []struct {
 		path string
@@ -1237,6 +1359,175 @@ func TestIsGoFile(t *testing.T) {
 			t.Errorf("isGoFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
+}
+
+// ---- HTTP handler integration tests for Ruby files ----
+
+func TestSnippetHandler_RbFile_Function(t *testing.T) {
+	// ruby/tags has no "end" field, so tree-sitter must supply it.
+	// Leading comment on line 1 is included in Start.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=ruby")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 1/4", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "# greet") {
+			t.Errorf("Code should contain leading comment, got %q", s.Code)
+		}
+		if !strings.Contains(s.Code, "def greet") {
+			t.Errorf("Code should contain def greet, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "def add") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_RbFile_SecondFunction(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=ruby")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 6 || snippets[0].End != 9 {
+			t.Errorf("Start/End: got %d/%d, want 6/9", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_RbFile_Class(t *testing.T) {
+	// class Point has a leading comment on line 11.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Point?context=ruby")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 11 || snippets[0].End != 23 {
+			t.Errorf("Start/End: got %d/%d, want 11/23", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_RbFile_Method(t *testing.T) {
+	// def initialize has a leading comment inside the class body.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/initialize?context=ruby")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 13 || snippets[0].End != 17 {
+			t.Errorf("Start/End: got %d/%d, want 13/17", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_RbFile_Module(t *testing.T) {
+	// module Shape has a leading comment on line 25.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Shape?context=ruby")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 25 || snippets[0].End != 31 {
+			t.Errorf("Start/End: got %d/%d, want 25/31", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_RbFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/greet?context=ruby")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 1 || ranges[0].End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 1/4", ranges[0].Start, ranges[0].End)
+		}
+	})
 }
 
 // ---- HTTP handler integration tests for Python files ----
