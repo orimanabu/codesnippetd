@@ -2871,3 +2871,315 @@ func TestLinesHandler_KTFile_UsesTreeSitter(t *testing.T) {
 		}
 	})
 }
+
+// sample Java source used across unit tests (no leading comments).
+var javaSample = []byte(`class Greeter {
+    public String greet(String name) {
+        return "Hello, " + name + "!";
+    }
+
+    public int add(int a, int b) {
+        return a + b;
+    }
+}
+
+interface Shape {
+    int area();
+}
+
+enum Color {
+    RED, GREEN, BLUE
+}
+`)
+
+// ---- resolveEndWithTreeSitterJava tests ----
+
+func TestResolveEndWithTreeSitterJava_Class(t *testing.T) {
+	// class Greeter starts at line 1, ends at line 9
+	end, err := resolveEndWithTreeSitterJava(javaSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 9 {
+		t.Errorf("end: got %d, want 9", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJava_Method(t *testing.T) {
+	// public String greet starts at line 2, ends at line 4
+	end, err := resolveEndWithTreeSitterJava(javaSample, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 4 {
+		t.Errorf("end: got %d, want 4", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJava_SecondMethod(t *testing.T) {
+	// public int add starts at line 6, ends at line 8
+	end, err := resolveEndWithTreeSitterJava(javaSample, 6)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 8 {
+		t.Errorf("end: got %d, want 8", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJava_Interface(t *testing.T) {
+	// interface Shape starts at line 11, ends at line 13
+	end, err := resolveEndWithTreeSitterJava(javaSample, 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 13 {
+		t.Errorf("end: got %d, want 13", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJava_InterfaceMethod(t *testing.T) {
+	// int area() is a single-line method at line 12, ends at line 12
+	end, err := resolveEndWithTreeSitterJava(javaSample, 12)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 12 {
+		t.Errorf("end: got %d, want 12", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJava_Enum(t *testing.T) {
+	// enum Color starts at line 15, ends at line 17
+	end, err := resolveEndWithTreeSitterJava(javaSample, 15)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 17 {
+		t.Errorf("end: got %d, want 17", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterJava_LineNotFound(t *testing.T) {
+	// line 5 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterJava(javaSample, 5)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
+// ---- isJavaFile tests ----
+
+func TestIsJavaFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"Main.java", true},
+		{"src/Foo.java", true},
+		{"main.go", false},
+		{"main.rs", false},
+		{"app.ts", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isJavaFile(c.path); got != c.want {
+			t.Errorf("isJavaFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+// ---- HTTP handler integration tests for Java files ----
+
+func TestSnippetHandler_JavaFile_Class(t *testing.T) {
+	// java/tags has no "end" field, so tree-sitter must supply it.
+	// Leading comment on line 1 is included in Start.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Greeter?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 13 {
+			t.Errorf("Start/End: got %d/%d, want 1/13", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "// Greeter class") {
+			t.Errorf("Code should contain leading comment, got %q", s.Code)
+		}
+		if !strings.Contains(s.Code, "class Greeter") {
+			t.Errorf("Code should contain class Greeter, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "interface Shape") {
+			t.Errorf("Code should not extend past end of class, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_JavaFile_Method(t *testing.T) {
+	// greet method has leading comment on line 4.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 4 || snippets[0].End != 7 {
+			t.Errorf("Start/End: got %d/%d, want 4/7", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_JavaFile_SecondMethod(t *testing.T) {
+	// add method has leading comment on line 9.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 9 || snippets[0].End != 12 {
+			t.Errorf("Start/End: got %d/%d, want 9/12", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_JavaFile_Interface(t *testing.T) {
+	// interface Shape has leading comment on line 15.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Shape?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 15 || snippets[0].End != 20 {
+			t.Errorf("Start/End: got %d/%d, want 15/20", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_JavaFile_InterfaceMethod(t *testing.T) {
+	// area method has leading comment on line 18.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/area?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 18 || snippets[0].End != 19 {
+			t.Errorf("Start/End: got %d/%d, want 18/19", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_JavaFile_Enum(t *testing.T) {
+	// enum Color has leading comment on line 22.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Color?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 22 || snippets[0].End != 25 {
+			t.Errorf("Start/End: got %d/%d, want 22/25", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_JavaFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/Greeter?context=java")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 1 || ranges[0].End != 13 {
+			t.Errorf("Start/End: got %d/%d, want 1/13", ranges[0].Start, ranges[0].End)
+		}
+	})
+}

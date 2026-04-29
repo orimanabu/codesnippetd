@@ -7,6 +7,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/ruby"
@@ -97,6 +98,36 @@ func resolveEndWithTreeSitterRuby(content []byte, startLine int) (int, error) {
 // funcLine.
 func resolveStartWithTreeSitterRuby(content []byte, funcLine int) (int, error) {
 	return resolveStartWithTreeSitter(ruby.GetLanguage(), content, funcLine)
+}
+
+// javaDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Java source files.
+var javaDefinitionTypes = map[string]bool{
+	"class_declaration":           true,
+	"interface_declaration":       true,
+	"method_declaration":          true,
+	"constructor_declaration":     true,
+	"enum_declaration":            true,
+	"annotation_type_declaration": true,
+	"record_declaration":          true,
+}
+
+// isJavaFile reports whether path is a Java source file.
+func isJavaFile(path string) bool {
+	return filepath.Ext(path) == ".java"
+}
+
+// resolveEndWithTreeSitterJava returns the 1-based end line of the Java
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterJava(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(java.GetLanguage(), javaDefinitionTypes, content, startLine)
+}
+
+// resolveStartWithTreeSitterJava returns the 1-based start line (including
+// any leading comment block) for the Java definition whose first line is
+// funcLine.
+func resolveStartWithTreeSitterJava(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(java.GetLanguage(), content, funcLine)
 }
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
