@@ -8,6 +8,8 @@ ctags -R --extras=+g --fields=+e
 
 ```
 tree-sitterのサポート言語として、Haskellを追加してください。コマンドラインオプション `--tree-sitter` 指定があり、かつExtra["end"]がなく、かつファイルの拡張子が `.hs` のときはtree sitterのHaskell parserを使うようにしてください。テストコードとREADME.mdの更新もお願いします
+
+tree-sitterのサポート言語として、Goを追加してください。ファイルの拡張子が `.go` のときはtree sitterのGo parserを使うようにしてください。resolveStartWithTreeSitter()の対応もお願いします。テストコードとREADME.mdの更新もお願いします
 ```
 
 # Prompts
@@ -12692,4 +12694,32 @@ func (r *ConmonOCIRuntime) Name() string {
   tree-sitter 非対応言語（Go など ctags のみの言語）は引き続き scanLeadingComments の文字列マッチを使います。
 
 ✻ Baked for 2m 3s
+```
+
+```
+❯ 今の実装でtree-sitterを使わずctagsのみ使っている言語をリストして
+
+⏺ resolveStartEnd の switch 文に含まれていない拡張子がすべて ctags のみです。tree-sitter 対応は以下の8種だけ：
+
+  ┌────────┬──────────────────────────┐
+  │ 拡張子 │           言語           │
+  ├────────┼──────────────────────────┤
+  │ .rs    │ Rust                     │
+  ├────────┼──────────────────────────┤
+  │ .js    │ JavaScript               │
+  ├────────┼──────────────────────────┤
+  │ .ts    │ TypeScript               │
+  ├────────┼──────────────────────────┤
+  │ .hs    │ Haskell                  │
+  ├────────┼──────────────────────────┤
+  │ .kt    │ Kotlin                   │
+  ├────────┼──────────────────────────┤
+  │ .php   │ PHP                      │
+  ├────────┼──────────────────────────┤
+  │ .ml    │ OCaml (実装)             │
+  ├────────┼──────────────────────────┤
+  │ .mli   │ OCaml (インターフェース) │
+  └────────┴──────────────────────────┘
+
+  これ以外（例：.go, .py, .c, .cpp, .java, .rb など ctags が対応する全言語）は ctags + 文字列マッチのフォールバックになります。
 ```
