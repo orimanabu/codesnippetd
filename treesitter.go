@@ -8,6 +8,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/kotlin"
 	"github.com/smacker/go-tree-sitter/php"
 	"github.com/smacker/go-tree-sitter/rust"
@@ -41,6 +42,32 @@ func resolveEndWithTreeSitterGo(content []byte, startLine int) (int, error) {
 // leading comment block) for the Go definition whose first line is funcLine.
 func resolveStartWithTreeSitterGo(content []byte, funcLine int) (int, error) {
 	return resolveStartWithTreeSitter(golang.GetLanguage(), content, funcLine)
+}
+
+// pythonDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Python source files.
+var pythonDefinitionTypes = map[string]bool{
+	"function_definition":  true,
+	"class_definition":     true,
+	"decorated_definition": true,
+}
+
+// isPyFile reports whether path is a Python source file.
+func isPyFile(path string) bool {
+	return filepath.Ext(path) == ".py"
+}
+
+// resolveEndWithTreeSitterPython returns the 1-based end line of the Python
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterPython(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(python.GetLanguage(), pythonDefinitionTypes, content, startLine)
+}
+
+// resolveStartWithTreeSitterPython returns the 1-based start line (including
+// any leading comment block) for the Python definition whose first line is
+// funcLine.
+func resolveStartWithTreeSitterPython(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(python.GetLanguage(), content, funcLine)
 }
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
