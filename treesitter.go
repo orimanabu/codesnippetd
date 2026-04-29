@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/c"
+	"github.com/smacker/go-tree-sitter/cpp"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/javascript"
@@ -472,4 +474,66 @@ func resolveEndWithTreeSitterOCaml(content []byte, startLine int) (int, error) {
 // OCaml interface (.mli) definition starting at startLine (1-based).
 func resolveEndWithTreeSitterOCamlInterface(content []byte, startLine int) (int, error) {
 	return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), ocamlMLIDefinitionTypes, content, startLine)
+}
+
+// isCFile reports whether path is a C source or header file.
+func isCFile(path string) bool {
+	ext := filepath.Ext(path)
+	return ext == ".c" || ext == ".h"
+}
+
+// isCppFile reports whether path is a C++ source or header file.
+func isCppFile(path string) bool {
+	ext := filepath.Ext(path)
+	return ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".hh" || ext == ".hpp" || ext == ".hxx"
+}
+
+// cDefinitionTypes is the set of tree-sitter node types treated as definitions
+// in C source files.
+var cDefinitionTypes = map[string]bool{
+	"function_definition": true,
+	"struct_specifier":    true,
+	"enum_specifier":      true,
+	"union_specifier":     true,
+	"type_definition":     true,
+}
+
+// cppDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in C++ source files. It extends cDefinitionTypes with
+// C++-specific constructs.
+var cppDefinitionTypes = map[string]bool{
+	// shared with C
+	"function_definition": true,
+	"struct_specifier":    true,
+	"enum_specifier":      true,
+	"union_specifier":     true,
+	"type_definition":     true,
+	// C++-specific
+	"class_specifier":      true,
+	"template_declaration": true,
+	"namespace_definition": true,
+}
+
+// resolveEndWithTreeSitterC returns the 1-based end line of the C definition
+// starting at startLine (1-based).
+func resolveEndWithTreeSitterC(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(c.GetLanguage(), cDefinitionTypes, content, startLine)
+}
+
+// resolveStartWithTreeSitterC returns the 1-based start line (including any
+// leading comment block) for the C definition whose first line is funcLine.
+func resolveStartWithTreeSitterC(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(c.GetLanguage(), content, funcLine)
+}
+
+// resolveEndWithTreeSitterCpp returns the 1-based end line of the C++
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterCpp(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(cpp.GetLanguage(), cppDefinitionTypes, content, startLine)
+}
+
+// resolveStartWithTreeSitterCpp returns the 1-based start line (including any
+// leading comment block) for the C++ definition whose first line is funcLine.
+func resolveStartWithTreeSitterCpp(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(cpp.GetLanguage(), content, funcLine)
 }

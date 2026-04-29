@@ -3183,3 +3183,519 @@ func TestLinesHandler_JavaFile_UsesTreeSitter(t *testing.T) {
 		}
 	})
 }
+
+// sample C source used across unit tests (no leading comments).
+var cSample = []byte(`char* greet(char* name) {
+    return name;
+}
+
+int add(int a, int b) {
+    return a + b;
+}
+
+struct Point {
+    double x;
+    double y;
+};
+
+enum Color { RED, GREEN, BLUE };
+`)
+
+// ---- resolveEndWithTreeSitterC tests ----
+
+func TestResolveEndWithTreeSitterC_Function(t *testing.T) {
+	// char* greet starts at line 1, ends at line 3
+	end, err := resolveEndWithTreeSitterC(cSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 3 {
+		t.Errorf("end: got %d, want 3", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterC_SecondFunction(t *testing.T) {
+	// int add starts at line 5, ends at line 7
+	end, err := resolveEndWithTreeSitterC(cSample, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 7 {
+		t.Errorf("end: got %d, want 7", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterC_Struct(t *testing.T) {
+	// struct Point starts at line 9, ends at line 12
+	end, err := resolveEndWithTreeSitterC(cSample, 9)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 12 {
+		t.Errorf("end: got %d, want 12", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterC_Enum(t *testing.T) {
+	// enum Color starts at line 14, ends at line 14
+	end, err := resolveEndWithTreeSitterC(cSample, 14)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 14 {
+		t.Errorf("end: got %d, want 14", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterC_LineNotFound(t *testing.T) {
+	// line 4 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterC(cSample, 4)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
+// sample C++ source used across unit tests (no leading comments).
+var cppSample = []byte(`class Greeter {
+public:
+    std::string greet(std::string name) {
+        return "Hello, " + name + "!";
+    }
+
+    int add(int a, int b) {
+        return a + b;
+    }
+};
+
+struct Point {
+    double x;
+    double y;
+};
+
+enum class Color { Red, Green, Blue };
+`)
+
+// ---- resolveEndWithTreeSitterCpp tests ----
+
+func TestResolveEndWithTreeSitterCpp_Class(t *testing.T) {
+	// class Greeter starts at line 1, ends at line 10
+	end, err := resolveEndWithTreeSitterCpp(cppSample, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 10 {
+		t.Errorf("end: got %d, want 10", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterCpp_Method(t *testing.T) {
+	// std::string greet starts at line 3, ends at line 5
+	end, err := resolveEndWithTreeSitterCpp(cppSample, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 5 {
+		t.Errorf("end: got %d, want 5", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterCpp_SecondMethod(t *testing.T) {
+	// int add starts at line 7, ends at line 9
+	end, err := resolveEndWithTreeSitterCpp(cppSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 9 {
+		t.Errorf("end: got %d, want 9", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterCpp_Struct(t *testing.T) {
+	// struct Point starts at line 12, ends at line 15
+	end, err := resolveEndWithTreeSitterCpp(cppSample, 12)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 15 {
+		t.Errorf("end: got %d, want 15", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterCpp_Enum(t *testing.T) {
+	// enum class Color starts at line 17, ends at line 17
+	end, err := resolveEndWithTreeSitterCpp(cppSample, 17)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 17 {
+		t.Errorf("end: got %d, want 17", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterCpp_LineNotFound(t *testing.T) {
+	// line 6 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterCpp(cppSample, 6)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
+// ---- isCFile / isCppFile tests ----
+
+func TestIsCFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.c", true},
+		{"src/foo.c", true},
+		{"header.h", true},
+		{"src/lib.h", true},
+		{"main.cpp", false},
+		{"main.go", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isCFile(c.path); got != c.want {
+			t.Errorf("isCFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsCppFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.cpp", true},
+		{"src/foo.cc", true},
+		{"src/bar.cxx", true},
+		{"header.hpp", true},
+		{"header.hh", true},
+		{"header.hxx", true},
+		{"main.c", false},
+		{"header.h", false},
+		{"main.go", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isCppFile(c.path); got != c.want {
+			t.Errorf("isCppFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+// ---- HTTP handler integration tests for C files ----
+
+func TestSnippetHandler_CFile_Function(t *testing.T) {
+	// c/tags has no "end" field, so tree-sitter must supply it.
+	// Leading comment on line 1 is included in Start.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 1/4", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "// greet function") {
+			t.Errorf("Code should contain leading comment, got %q", s.Code)
+		}
+		if !strings.Contains(s.Code, "char* greet") {
+			t.Errorf("Code should contain char* greet, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "int add") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_CFile_SecondFunction(t *testing.T) {
+	// add function has leading comment on line 6.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 6 || snippets[0].End != 9 {
+			t.Errorf("Start/End: got %d/%d, want 6/9", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_CFile_Struct(t *testing.T) {
+	// struct Point has leading comment on line 11.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Point?context=c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 11 || snippets[0].End != 15 {
+			t.Errorf("Start/End: got %d/%d, want 11/15", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_CFile_Enum(t *testing.T) {
+	// enum Color has leading comment on line 17.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Color?context=c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 17 || snippets[0].End != 18 {
+			t.Errorf("Start/End: got %d/%d, want 17/18", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_CFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/greet?context=c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 1 || ranges[0].End != 4 {
+			t.Errorf("Start/End: got %d/%d, want 1/4", ranges[0].Start, ranges[0].End)
+		}
+	})
+}
+
+// ---- HTTP handler integration tests for C++ files ----
+
+func TestSnippetHandler_CppFile_Class(t *testing.T) {
+	// cpp/tags has no "end" field, so tree-sitter must supply it.
+	// Leading comment on line 1 is included in Start.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Greeter?context=cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 1 || s.End != 13 {
+			t.Errorf("Start/End: got %d/%d, want 1/13", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "// Greeter class") {
+			t.Errorf("Code should contain leading comment, got %q", s.Code)
+		}
+		if !strings.Contains(s.Code, "class Greeter") {
+			t.Errorf("Code should contain class Greeter, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "struct Point") {
+			t.Errorf("Code should not extend past end of class, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_CppFile_Method(t *testing.T) {
+	// greet method has leading comment on line 4.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/greet?context=cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 4 || snippets[0].End != 7 {
+			t.Errorf("Start/End: got %d/%d, want 4/7", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_CppFile_SecondMethod(t *testing.T) {
+	// add method has leading comment on line 9.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/add?context=cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 9 || snippets[0].End != 12 {
+			t.Errorf("Start/End: got %d/%d, want 9/12", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_CppFile_Struct(t *testing.T) {
+	// struct Point has leading comment on line 15.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Point?context=cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 15 || snippets[0].End != 19 {
+			t.Errorf("Start/End: got %d/%d, want 15/19", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_CppFile_Enum(t *testing.T) {
+	// enum class Color has leading comment on line 21.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Color?context=cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 21 || snippets[0].End != 22 {
+			t.Errorf("Start/End: got %d/%d, want 21/22", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_CppFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/Greeter?context=cpp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 1 || ranges[0].End != 13 {
+			t.Errorf("Start/End: got %d/%d, want 1/13", ranges[0].Start, ranges[0].End)
+		}
+	})
+}

@@ -503,6 +503,10 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 			tsStart, tsErr = resolveStartWithTreeSitterRuby(data, funcLine)
 		case isJavaFile(tag.Path):
 			tsStart, tsErr = resolveStartWithTreeSitterJava(data, funcLine)
+		case isCppFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterCpp(data, funcLine)
+		case isCFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterC(data, funcLine)
 		case isRustFile(tag.Path):
 			tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):
@@ -548,6 +552,10 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 			tsEnd, tsErr = resolveEndWithTreeSitterRuby(data, funcLine)
 		case isJavaFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterJava(data, funcLine)
+		case isCppFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterCpp(data, funcLine)
+		case isCFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterC(data, funcLine)
 		case isRustFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):
