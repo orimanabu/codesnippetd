@@ -15520,3 +15520,4206 @@ parserを使うようにしてください。resolveStartWithTreeSitter()の対�
 
 ✻ Baked for 14m 2s
 ```
+
+```
+❯ 今はmain.go,
+treesitter.goの2つのソースファイルからできています。ファイルを分割することでメンテナンスしやすくなったりテストカバレッジを上げたり品質向上につながるかどうか検討してください
+
+⏺ Explore(Explore codebase structure and content)
+  ⎿  Done (10 tool uses · 76.3k tokens · 1m 5s)
+  (ctrl+o to expand)
+
+⏺ よく理解できました。次にPlanエージェントで分割戦略を設計します。
+
+⏺ Plan(Design file splitting strategy)
+  ⎿  Done (20 tool uses · 81.0k tokens · 2m 1s)
+  (ctrl+o to expand)
+
+⏺ 詳細な分析が完了しました。コードを直接確認して計画を確定します。
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ 計画を作成します。
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ User approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/wondrous-sleeping-umbrella.md · /plan to edit
+     Context
+
+     codesnippetd は現在 main.go（837行）と treesitter.go（649行）の2ファイル構成。
+     テストは main_test.go（2326行）と treesitter_test.go に集約されている。
+
+     ファイル分割の目的：
+     - 各ファイルが単一責任を持ち、新規コントリビューターが「どこを読めばいいか」を即座に把握できるようにする
+     - 純粋関数群（テキスト処理・パス解決・タグパース）を HTTP 依存のないファイルに分離し、ユニットテストを書きやすくする
+     - 言語追加時の変更箇所を treesitter_languages.go 1ファイルに集約する
+
+     ---
+     推奨ファイル構成
+
+     ソースファイル（main.go を分割）
+
+     ┌───────────────┬────────────┬───────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+     │   ファイル    │ 行数(目安) │                                       内容                                        │                         分割の意義                         │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ types.go      │ ~65行      │ Tag, MarshalJSON, Snippet, LineRange, TagsDB, requestMetaKey, requestMeta,        │ 他全ファイルの依存先となるゼロ依存アンカー                 │
+     │               │            │ markTreeSitterUsed, responseRecorder, pipe                                        │                                                            │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ tags.go       │ ~100行     │ parseLine, loadTagsFile, (TagsDB).lookup, lookupWithReadtags, lookupTag           │ ctags I/O 層を HTTP から完全分離、純粋ユニットテスト可能   │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ paths.go      │ ~60行      │ tagsFileForContext, resolveTagsPath, expandTilde, queryTagsPath, resolveFilePath  │ 副作用なし純粋関数、独立ユニットテスト可能                 │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ lines.go      │ ~60行      │ isCommentLine, scanLeadingComments, normalizeTagPattern, findPatternLine,         │ 副作用なし純粋関数、独立ユニットテスト可能                 │
+     │               │            │ extractLines                                                                      │                                                            │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ resolver.go   │ ~135行     │ resolveStartEnd, snippetForTag, lineRangeForTag                                   │ ctags ↔ tree-sitter の橋渡し境界を明示化                   │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ handlers.go   │ ~200行     │ 全HTTPハンドラ関数 + registerHandlers(mux, useTreeSitter bool)                    │ テスト用 newHandler()                                      │
+     │               │            │                                                                                   │ との重複解消、ハンドラ登録のテスタビリティ向上             │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ middleware.go │ ~40行      │ corsMiddleware, accessLog                                                         │ (低優先度) 完結性のため                                    │
+     ├───────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+     │ main.go       │ ~40行      │ フラグパース、registerHandlers 呼び出し、サーバ起動のみ                           │ 本来のエントリポイント責任のみに絞る                       │
+     └───────────────┴────────────┴───────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
+     ソースファイル（treesitter.go を分割）
+
+     ┌─────────────────────────┬────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     ┐
+     │        ファイル         │ 行数(目安) │                                                                 内容
+     │
+     ├─────────────────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     ┤
+     │ treesitter.go           │ ~130行     │ 汎用ヘルパー: isCommentNodeType, rowHasCommentNode, findCommentStartRow, resolveStartWithTreeSitter, findDefinitionNodeAtRow,
+     │
+     │                         │            │ resolveEndWithTreeSitter, Lua固有ヘルパー
+     │
+     ├─────────────────────────┼────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     ┤
+     │ treesitter_languages.go │ ~520行     │ 14言語のXDefinitionTypesマップ + isXFile() + resolveStart/EndWithTreeSitterX() ラッパー全28関数
+     │
+     └─────────────────────────┴────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     ┘
+
+     ▎ 言語ごとに1ファイルに分割しない理由: 各言語の実装は約10〜15行（マップ1つ + isX() + 2ラッパー）に過ぎず、14ファイルに分けるとナビゲーションコストが上回る。「言語追加 =
+     treesitter_languages.go を1か所変更する」という明快な規則の方が保守性が高い。
+
+     テストファイル
+
+     main_test.go を以下に分割（package main のまま）：
+
+     ┌──────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+     │  テストファイル  │                                                                    移動するテスト                                                                    │
+     ├──────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+     │ types_test.go    │ TestMarshalJSON_*                                                                                                                                    │
+     ├──────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+     │ tags_test.go     │ TestParseLine_*, TestLoadTagsFile_*                                                                                                                  │
+     ├──────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+     │ paths_test.go    │ TestTagsFileForContext_*, TestResolveTagsPath_*, TestExpandTilde_*, TestQueryTagsPath_*                                                              │
+     ├──────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+     │ lines_test.go    │ TestNormalizeTagPattern_*, TestFindPatternLine_*, TestExtractLines_*                                                                                 │
+     ├──────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+     │ resolver_test.go │ TestSnippetForTag_*, TestLineRangeForTag_*                                                                                                           │
+     ├──────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+     │ handlers_test.go │ TestHandler_*, TestSnippetHandler_*, TestLinesHandler_*, TestHealthz_*, TestPipe_*, TestAccessLog_*, テストヘルパー (withCwd, writeTemp, newHandler) │
+     └──────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+     treesitter_test.go は現状維持（treesitter_languages_test.go へのリネームはオプション）。
+
+     ---
+     実装ステップ
+
+     1. types.go 作成 — 構造体・グローバルを main.go から移動、import 調整
+     2. tags.go 作成 — タグI/O関数を移動、import 調整
+     3. paths.go 作成 — パス解決関数を移動、import 調整
+     4. lines.go 作成 — テキスト処理関数を移動、import 調整
+     5. handlers.go 作成 — ハンドラを移動、registerHandlers() 関数を新設
+     6. middleware.go 作成 — ミドルウェアを移動
+     7. resolver.go 作成 — resolveStartEnd 等を移動
+     8. main.go 縮小 — フラグ・起動のみを残す
+     9. treesitter_languages.go 作成 — 言語定義を treesitter.go から移動
+     10. テストファイル分割 — main_test.go を各ファイルに振り分け
+     11. go build ./... と go test ./... で動作確認
+
+     ---
+     検証方法
+
+     # ビルドが通ること
+     go build ./...
+
+     # 全テストがパスすること
+     go test ./...
+
+     # 競合状態がないこと
+     go test -race ./...
+
+     # vet が通ること
+     go vet ./...
+
+     ---
+     対象ファイル
+
+     - /Users/ori/devel/src/github.com/orimanabu/codesnippetd/main.go
+     - /Users/ori/devel/src/github.com/orimanabu/codesnippetd/treesitter.go
+     - /Users/ori/devel/src/github.com/orimanabu/codesnippetd/main_test.go
+     - /Users/ori/devel/src/github.com/orimanabu/codesnippetd/treesitter_test.go
+
+     新規作成ファイル: types.go, tags.go, paths.go, lines.go, resolver.go, handlers.go, middleware.go, treesitter_languages.go
+     新規テストファイル: types_test.go, tags_test.go, paths_test.go, lines_test.go, resolver_test.go, handlers_test.go
+
+⏺ 実装を開始します。まず全ファイルを完全に読み込みます。
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ テストファイルも読み込みます。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 内容を全て把握しました。ファイルを作成します。まず並列でソースファイルを作成します。
+
+⏺ Write(types.go)
+  ⎿  Wrote 103 lines to types.go
+       1 package main
+       2
+       3 import (
+       4        "context"
+       5        "encoding/json"
+       6        "net/http"
+       7        "sync"
+       8 )
+       9
+      10 // Tag represents a single ctags entry in Universal Ctags JSON output format.
+     … +93 lines (ctrl+o to expand)
+
+⏺ Write(tags.go)
+  ⎿  Wrote 182 lines to tags.go
+       1 package main
+       2
+       3 import (
+       4        "errors"
+       5        "fmt"
+       6        "os"
+       7        "os/exec"
+       8        "strconv"
+       9        "strings"
+      10 )
+     … +172 lines (ctrl+o to expand)
+  ⎿  Found 19 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ 新規ファイルを続けて作成し、最後に main.go を書き換えます。
+
+⏺ Write(paths.go)
+  ⎿  Wrote 70 lines to paths.go
+      1 package main
+      2
+      3 import (
+      4         "fmt"
+      5         "net/http"
+      6         "os/user"
+      7         "path/filepath"
+      8         "strings"
+      9 )
+     … +60 lines (ctrl+o to expand)
+  ⎿  Found 9 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Write(lines.go)
+  ⎿  Wrote 62 lines to lines.go
+       1 package main
+       2
+       3 import "strings"
+       4
+       5 // isCommentLine reports whether s (already trimmed of leading whitespace) is a
+       6 // single-line comment in a supported language.
+       7 func isCommentLine(s string) bool {
+       8        return strings.HasPrefix(s, "//") || // Go, Rust, JS, TS, Kotlin, PHP, Java, C++
+       9                strings.HasPrefix(s, "#") || // Python, Ruby, Shell
+      10                strings.HasPrefix(s, "--") || // Haskell, SQL, Lua
+     … +52 lines (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Write(resolver.go)
+  ⎿  Wrote 196 lines to resolver.go
+      1 package main
+      2
+      3 import (
+      4         "context"
+      5         "fmt"
+      6         "os"
+      7         "strconv"
+      8         "strings"
+      9 )
+     … +186 lines (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Write(middleware.go)
+  ⎿  Wrote 46 lines to middleware.go
+       1 package main
+       2
+       3 import (
+       4        "context"
+       5        "log"
+       6        "net/http"
+       7        "time"
+       8 )
+       9
+      10 // corsMiddleware sets Access-Control-Allow-Origin on every response and handles
+     … +36 lines (ctrl+o to expand)
+  ⎿  Found 6 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Write(handlers.go)
+  ⎿  Wrote 194 lines to handlers.go
+       1 package main
+       2
+       3 import (
+       4        "encoding/json"
+       5        "errors"
+       6        "fmt"
+       7        "io"
+       8        "log"
+       9        "net/http"
+      10        "os"
+     … +184 lines (ctrl+o to expand)
+  ⎿  Found 4 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Now rewrite main.go to contain only main():
+
+⏺ Write(main.go)
+  ⎿  Added 1 line, removed 803 lines
+        1  package main
+        2
+        3  import (
+        4 -  "context"
+        5 -  "encoding/json"
+        6 -  "errors"
+        4    "flag"
+        5    "fmt"
+        9 -  "io"
+        6    "log"
+        7    "net/http"
+       12 -  "os"
+       13 -  "os/exec"
+       14 -  "os/user"
+       15 -  "path/filepath"
+       16 -  "strconv"
+       17 -  "strings"
+       18 -  "sync"
+       19 -  "time"
+        8  )
+        9
+       22 -// Tag represents a single ctags entry in Universal Ctags JSON output format.
+       23 -// See: https://docs.ctags.io/en/latest/man/ctags-client-tools.7.html
+       24 -type Tag struct {
+       25 -  Type     string `json:"_type"`
+       26 -  Name     string `json:"name"`
+       27 -  Path     string `json:"path"`
+       28 -  Pattern  string `json:"pattern,omitempty"`
+       29 -  Language string `json:"language,omitempty"`
+       30 -  Kind     string `json:"kind,omitempty"`
+       31 -  Line     int    `json:"line,omitempty"`
+       32 -  // Extension fields (e.g. scope, access, typeref, roles, extras, etc.)
+       33 -  // stored as a flat map and inlined into the JSON output
+       34 -  Extra map[string]string `json:"-"`
+       35 -}
+       36 -
+       37 -// MarshalJSON serializes Tag with extension fields inlined at the top level.
+       38 -func (t Tag) MarshalJSON() ([]byte, error) {
+       39 -  m := map[string]interface{}{
+       40 -    "_type": t.Type,
+       41 -    "name":  t.Name,
+       42 -    "path":  t.Path,
+       43 -  }
+       44 -  if t.Pattern != "" {
+       45 -    m["pattern"] = t.Pattern
+       46 -  }
+       47 -  if t.Language != "" {
+       48 -    m["language"] = t.Language
+       49 -  }
+       50 -  if t.Kind != "" {
+       51 -    m["kind"] = t.Kind
+       52 -  }
+       53 -  if t.Line != 0 {
+       54 -    m["line"] = t.Line
+       55 -  }
+       56 -  for k, v := range t.Extra {
+       57 -    m[k] = v
+       58 -  }
+       59 -  return json.Marshal(m)
+       60 -}
+       61 -
+       62 -// pipe is the global in-memory buffer used by the /pipe endpoint.
+       63 -var pipe struct {
+       64 -  mu   sync.Mutex
+       65 -  data []byte
+       66 -}
+       67 -
+       68 -// requestMetaKey is the context key for requestMeta values.
+       69 -type requestMetaKey struct{}
+       70 -
+       71 -// requestMeta carries per-request metadata that handlers can annotate and
+       72 -// the access log middleware can read after the handler returns.
+       73 -type requestMeta struct {
+       74 -  usedTreeSitter bool
+       75 -}
+       76 -
+       77 -// markTreeSitterUsed records that tree-sitter resolved an end line for this request.
+       78 -func markTreeSitterUsed(ctx context.Context) {
+       79 -  if m, ok := ctx.Value(requestMetaKey{}).(*requestMeta); ok {
+       80 -    m.usedTreeSitter = true
+       81 -  }
+       82 -}
+       83 -
+       84 -// responseRecorder wraps http.ResponseWriter to capture the written status code.
+       85 -type responseRecorder struct {
+       86 -  http.ResponseWriter
+       87 -  status int
+       88 -}
+       89 -
+       90 -func (r *responseRecorder) WriteHeader(status int) {
+       91 -  r.status = status
+       92 -  r.ResponseWriter.WriteHeader(status)
+       93 -}
+       94 -
+       95 -// corsMiddleware sets Access-Control-Allow-Origin on every response and handles
+       96 -// preflight OPTIONS requests so that browser clients (e.g. canvas.html loaded
+       97 -// from a file:// origin) are not blocked by CORS policy.
+       98 -func corsMiddleware(next http.Handler) http.Handler {
+       99 -  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+      100 -    w.Header().Set("Access-Control-Allow-Origin", "*")
+      101 -    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+      102 -    w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+      103 -    if r.Method == http.MethodOptions {
+      104 -      w.WriteHeader(http.StatusNoContent)
+      105 -      return
+      106 -    }
+      107 -    next.ServeHTTP(w, r)
+      108 -  })
+      109 -}
+      110 -
+      111 -// accessLog is middleware that logs each request's method, path, status code, and duration.
+      112 -// It also logs whether tree-sitter was used to resolve an end line.
+      113 -func accessLog(next http.Handler) http.Handler {
+      114 -  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+      115 -    start := time.Now()
+      116 -    meta := &requestMeta{}
+      117 -    r = r.WithContext(context.WithValue(r.Context(), requestMetaKey{}, meta))
+      118 -    rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+      119 -    next.ServeHTTP(rec, r)
+      120 -    query := r.URL.RawQuery
+      121 -    if r.URL.Path == "/pipe" {
+      122 -      log.Printf("%s %s query=%q %d %s", r.Method, r.URL.Path, query, rec.status, time.Since(start))
+      123 -    } else {
+      124 -      parser := "ctags"
+      125 -      if meta.usedTreeSitter {
+      126 -        parser = "tree-sitter"
+      127 -      }
+      128 -      log.Printf("%s %s query=%q %d %s parser=%s", r.Method, r.URL.Path, query, rec.status, time.Since(start), parser)
+      129 -    }
+      130 -  })
+      131 -}
+      132 -
+      133 -// TagsDB holds parsed tags indexed by tag name.
+      134 -type TagsDB struct {
+      135 -  tags map[string][]Tag
+      136 -}
+      137 -
+      138 -// parseLine parses a single line from a ctags file (extended format).
+      139 -// Format: tagname TAB filename TAB address ;" TAB [fields...]
+      140 -//
+      141 -// The address field (column 3) may itself contain tab characters when the
+      142 -// search pattern spans indented source lines. To handle this correctly we
+      143 -// locate the field boundaries manually: tagname and filename are delimited
+      144 -// by the first two literal tabs, and the address ends at the first `;"` that
+      145 -// is immediately followed by a tab or the end of the line.
+      146 -func parseLine(line string) (Tag, bool) {
+      147 -  // Skip comment/metadata lines
+      148 -  if strings.HasPrefix(line, "!_TAG_") || line == "" {
+      149 -    return Tag{}, false
+      150 -  }
+      151 -
+      152 -  // Extract tagname (field 1): up to the first tab.
+      153 -  tab1 := strings.Index(line, "\t")
+      154 -  if tab1 == -1 {
+      155 -    return Tag{}, false
+      156 -  }
+      157 -  tagName := line[:tab1]
+      158 -
+      159 -  // Extract filename (field 2): between the first and second tab.
+      160 -  rest := line[tab1+1:]
+      161 -  tab2 := strings.Index(rest, "\t")
+      162 -  if tab2 == -1 {
+      163 -    return Tag{}, false
+      164 -  }
+      165 -  fileName := rest[:tab2]
+      166 -
+      167 -  // The address (field 3) begins here and may contain embedded tabs
+      168 -  // (e.g. a search pattern for an indented line).  It ends at `;"` which
+      169 -  // is followed by either a tab (more extension fields) or end-of-string.
+      170 -  addrAndRest := rest[tab2+1:]
+      171 -
+      172 -  tag := Tag{
+      173 -    Type:  "tag",
+      174 -    Name:  tagName,
+      175 -    Path:  fileName,
+      176 -    Extra: make(map[string]string),
+      177 -  }
+      178 -
+      179 -  var addr, extensionFields string
+      180 -  if sepIdx := strings.Index(addrAndRest, ";\"\t"); sepIdx != -1 {
+      181 -    // `;"` followed by a tab: extension fields follow.
+      182 -    addr = addrAndRest[:sepIdx]
+      183 -    extensionFields = addrAndRest[sepIdx+3:] // skip `;"` + tab
+      184 -  } else if strings.HasSuffix(addrAndRest, ";\"") {
+      185 -    // `;"` at end of line: no extension fields.
+      186 -    addr = addrAndRest[:len(addrAndRest)-2]
+      187 -  } else {
+      188 -    // No `;"` separator: the address is the next tab-delimited token (e.g. a
+      189 -    // bare line number), and any remaining tokens are extension fields.
+      190 -    if tabIdx := strings.Index(addrAndRest, "\t"); tabIdx != -1 {
+      191 -      addr = addrAndRest[:tabIdx]
+      192 -      extensionFields = addrAndRest[tabIdx+1:]
+      193 -    } else {
+      194 -      addr = addrAndRest
+      195 -    }
+      196 -  }
+      197 -  addr = strings.TrimSpace(addr)
+      198 -
+      199 -  // Determine if address is a line number or a search pattern.
+      200 -  if n, err := strconv.Atoi(addr); err == nil {
+      201 -    tag.Line = n
+      202 -  } else {
+      203 -    // Strip leading / and trailing / or ?...? delimiters used in ctags patterns.
+      204 -    pattern := addr
+      205 -    if (strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/")) ||
+      206 -      (strings.HasPrefix(pattern, "?") && strings.HasSuffix(pattern, "?")) {
+      207 -      pattern = pattern[1 : len(pattern)-1]
+      208 -    }
+      209 -    tag.Pattern = pattern
+      210 -  }
+      211 -
+      212 -  // Parse extension fields (tab-separated key:value pairs after the address field).
+      213 -  for _, field := range strings.Split(extensionFields, "\t") {
+      214 -    if field == "" {
+      215 -      continue
+      216 -    }
+      217 -    colonIdx := strings.Index(field, ":")
+      218 -    if colonIdx == -1 {
+      219 -      // kind shorthand (single character or word with no colon)
+      220 -      tag.Kind = field
+      221 -      continue
+      222 -    }
+      223 -    key := field[:colonIdx]
+      224 -    val := field[colonIdx+1:]
+      225 -    switch key {
+      226 -    case "kind":
+      227 -      // "kind:f" or "kind:function"
+      228 -      tag.Kind = val
+      229 -    case "line":
+      230 -      if n, err := strconv.Atoi(val); err == nil {
+      231 -        tag.Line = n
+      232 -      }
+      233 -    case "language":
+      234 -      tag.Language = val
+      235 -    default:
+      236 -      tag.Extra[key] = val
+      237 -    }
+      238 -  }
+      239 -
+      240 -  return tag, true
+      241 -}
+      242 -
+      243 -// loadTagsFile reads and parses the ctags file at path.
+      244 -func loadTagsFile(path string) (*TagsDB, error) {
+      245 -  data, err := os.ReadFile(path)
+      246 -  if err != nil {
+      247 -    return nil, fmt.Errorf("reading tags file: %w", err)
+      248 -  }
+      249 -
+      250 -  db := &TagsDB{tags: make(map[string][]Tag)}
+      251 -  for _, line := range strings.Split(string(data), "\n") {
+      252 -    tag, ok := parseLine(line)
+      253 -    if !ok {
+      254 -      continue
+      255 -    }
+      256 -    db.tags[tag.Name] = append(db.tags[tag.Name], tag)
+      257 -  }
+      258 -  return db, nil
+      259 -}
+      260 -
+      261 -// lookup returns all tags matching name, or nil if not found.
+      262 -func (db *TagsDB) lookup(name string) []Tag {
+      263 -  return db.tags[name]
+      264 -}
+      265 -
+      266 -// lookupWithReadtags runs the readtags command to find tags matching tagName in tagsPath.
+      267 -// Returns os.ErrNotExist if the tags file does not exist.
+      268 -func lookupWithReadtags(tagsPath, tagName string) ([]Tag, error) {
+      269 -  if _, err := os.Stat(tagsPath); err != nil {
+      270 -    if errors.Is(err, os.ErrNotExist) {
+      271 -      return nil, fmt.Errorf("tags file not found: %w", os.ErrNotExist)
+      272 -    }
+      273 -    return nil, fmt.Errorf("stat tags file: %w", err)
+      274 -  }
+      275 -
+      276 -  cmd := exec.Command("readtags", "-t", tagsPath, "-e", tagName)
+      277 -  out, err := cmd.Output()
+      278 -  if err != nil {
+      279 -    var exitErr *exec.ExitError
+      280 -    if errors.As(err, &exitErr) {
+      281 -      return nil, fmt.Errorf("readtags: %s", strings.TrimSpace(string(exitErr.Stderr)))
+      282 -    }
+      283 -    return nil, fmt.Errorf("running readtags: %w", err)
+      284 -  }
+      285 -
+      286 -  var tags []Tag
+      287 -  for _, line := range strings.Split(string(out), "\n") {
+      288 -    tag, ok := parseLine(line)
+      289 -    if !ok {
+      290 -      continue
+      291 -    }
+      292 -    tags = append(tags, tag)
+      293 -  }
+      294 -  return tags, nil
+      295 -}
+      296 -
+      297 -// lookupTag searches for tags by name. It uses readtags if available, otherwise
+      298 -// falls back to in-memory parsing via loadTagsFile.
+      299 -func lookupTag(tagsPath, tagName string) ([]Tag, error) {
+      300 -  if _, err := exec.LookPath("readtags"); err == nil {
+      301 -    return lookupWithReadtags(tagsPath, tagName)
+      302 -  }
+      303 -  db, err := loadTagsFile(tagsPath)
+      304 -  if err != nil {
+      305 -    return nil, err
+      306 -  }
+      307 -  return db.lookup(tagName), nil
+      308 -}
+      309 -
+      310 -// tagsFileForContext resolves the tags file path given an optional context query param.
+      311 -// If context is empty, "./tags" is used. If context is an absolute path, "<context>/tags"
+      312 -// is used directly. Otherwise "./<context>/tags" is used.
+      313 -func tagsFileForContext(context string) string {
+      314 -  if context == "" {
+      315 -    return filepath.Join(".", "tags")
+      316 -  }
+      317 -  if filepath.IsAbs(context) {
+      318 -    return filepath.Join(context, "tags")
+      319 -  }
+      320 -  return filepath.Join(".", context, "tags")
+      321 -}
+      322 -
+      323 -// resolveTagsPath returns the tags file path to use for a request.
+      324 -// If tagsParam is non-empty it is used directly (as provided by the "tags" query parameter).
+      325 -// Otherwise tagsFileForContext(context) is used.
+      326 -func resolveTagsPath(context, tagsParam string) string {
+      327 -  if tagsParam != "" {
+      328 -    return tagsParam
+      329 -  }
+      330 -  return tagsFileForContext(context)
+      331 -}
+      332 -
+      333 -// expandTilde replaces a leading "~" in path with the current user's home directory.
+      334 -// Paths that do not start with "~" are returned unchanged.
+      335 -func expandTilde(path string) (string, error) {
+      336 -  if !strings.HasPrefix(path, "~") {
+      337 -    return path, nil
+      338 -  }
+      339 -  u, err := user.Current()
+      340 -  if err != nil {
+      341 -    return "", fmt.Errorf("expanding ~: %w", err)
+      342 -  }
+      343 -  return u.HomeDir + path[1:], nil
+      344 -}
+      345 -
+      346 -// queryTagsPath reads the "context" and "tags" query parameters from r, expands
+      347 -// any leading "~" to the current user's home directory, and returns the resolved
+      348 -// tags file path.
+      349 -func queryTagsPath(r *http.Request) (string, error) {
+      350 -  context, err := expandTilde(r.URL.Query().Get("context"))
+      351 -  if err != nil {
+      352 -    return "", err
+      353 -  }
+      354 -  tagsParam, err := expandTilde(r.URL.Query().Get("tags"))
+      355 -  if err != nil {
+      356 -    return "", err
+      357 -  }
+      358 -  return resolveTagsPath(context, tagsParam), nil
+      359 -}
+      360 -
+      361 -// Snippet represents a code snippet extracted from a source file for a given tag.
+      362 -type Snippet struct {
+      363 -  Name  string `json:"name"`
+      364 -  Path  string `json:"path"`
+      365 -  Start int    `json:"start"`
+      366 -  End   int    `json:"end"`
+      367 -  Code  string `json:"code"`
+      368 -}
+      369 -
+      370 -// LineRange represents the start and end line numbers of a tag in its source file.
+      371 -type LineRange struct {
+      372 -  Name  string `json:"name"`
+      373 -  Path  string `json:"path"`
+      374 -  Start int    `json:"start"`
+      375 -  End   int    `json:"end"`
+      376 -}
+      377 -
+      378 -// isCommentLine reports whether s (already trimmed of leading whitespace) is a
+      379 -// single-line comment in a supported language.
+      380 -func isCommentLine(s string) bool {
+      381 -  return strings.HasPrefix(s, "//") || // Go, Rust, JS, TS, Kotlin, PHP, Java, C++
+      382 -    strings.HasPrefix(s, "#") || // Python, Ruby, Shell
+      383 -    strings.HasPrefix(s, "--") || // Haskell, SQL, Lua
+      384 -    strings.HasPrefix(s, "* ") || // block comment continuation (e.g. /* ... */ bodies)
+      385 -    strings.HasPrefix(s, "/*") || // block comment start
+      386 -    strings.HasPrefix(s, "(*") // OCaml
+      387 -}
+      388 -
+      389 -// scanLeadingComments walks backward from startLine (1-based) through lines and
+      390 -// returns the new start line extended to include any immediately preceding comment
+      391 -// lines. Only contiguous comment lines with no blank line between them are included.
+      392 -func scanLeadingComments(lines []string, startLine int) int {
+      393 -  for startLine > 1 {
+      394 -    prev := strings.TrimSpace(lines[startLine-2]) // lines is 0-indexed
+      395 -    if isCommentLine(prev) {
+      396 -      startLine--
+      397 -    } else {
+      398 -      break
+      399 -    }
+      400 -  }
+      401 -  return startLine
+      402 -}
+      403 -
+      404 -// normalizeTagPattern strips ctags regex anchors (^ prefix, $ suffix) and
+      405 -// unescapes common regex metacharacters so the result can be used with
+      406 -// strings.Contains for line matching.
+      407 -func normalizeTagPattern(pattern string) string {
+      408 -  p := strings.TrimPrefix(pattern, "^")
+      409 -  p = strings.TrimSuffix(p, "$")
+      410 -  p = strings.NewReplacer(`\*`, "*", `\.`, ".", `\/`, "/", `\\`, `\`).Replace(p)
+      411 -  return p
+      412 -}
+      413 -
+      414 -// findPatternLine returns the 1-based line number of the first line containing pattern,
+      415 -// or -1 if not found. The pattern may include ctags-style anchors (^/$) and escapes.
+      416 -func findPatternLine(lines []string, pattern string) int {
+      417 -  search := normalizeTagPattern(pattern)
+      418 -  for i, line := range lines {
+      419 -    if strings.Contains(line, search) {
+      420 -      return i + 1
+      421 -    }
+      422 -  }
+      423 -  return -1
+      424 -}
+      425 -
+      426 -// extractLines returns the joined content of lines[start-1 : end] (1-based, inclusive).
+      427 -func extractLines(lines []string, start, end int) string {
+      428 -  if start < 1 {
+      429 -    start = 1
+      430 -  }
+      431 -  if end > len(lines) {
+      432 -    end = len(lines)
+      433 -  }
+      434 -  return strings.Join(lines[start-1:end], "\n")
+      435 -}
+      436 -
+      437 -// resolveFilePath returns the path to the source file for a tag.
+      438 -// If tagPath is already absolute it is returned unchanged; otherwise contextDir
+      439 -// (the directory that contains the tags file) is prepended.
+      440 -func resolveFilePath(contextDir, tagPath string) string {
+      441 -  if filepath.IsAbs(tagPath) {
+      442 -    return tagPath
+      443 -  }
+      444 -  return filepath.Join(contextDir, tagPath)
+      445 -}
+      446 -
+      447 -// resolveStartEnd returns the start and end line numbers for a Tag.
+      448 -// contextDir is the directory containing the tags file; it is prepended to
+      449 -// tag.Path (which is relative to the tags file) when reading source files.
+      450 -// The source file is read only when pattern matching is needed (tag.Line == 0).
+      451 -// If the "end" extension field is absent and useTreeSitter is true and the file
+      452 -// is a supported language, tree-sitter is used to determine the end line.
+      453 -// If neither source provides an end line, endLine is returned as 0.
+      454 -// When tree-sitter successfully resolves the end line, markTreeSitterUsed is
+      455 -// called on ctx so that the access log middleware can record the fact.
+      456 -func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+      457 -  filePath := resolveFilePath(contextDir, tag.Path)
+      458 -
+      459 -  var lines []string
+      460 -  var data []byte
+      461 -
+      462 -  if tag.Line == 0 && tag.Pattern != "" {
+      463 -    data, err = os.ReadFile(filePath)
+      464 -    if err != nil {
+      465 -      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
+      466 -    }
+      467 -    lines = strings.Split(string(data), "\n")
+      468 -  }
+      469 -
+      470 -  // funcLine is the line where the definition itself begins (used for tree-sitter).
+      471 -  funcLine := tag.Line
+      472 -  if funcLine == 0 && tag.Pattern != "" {
+      473 -    funcLine = findPatternLine(lines, tag.Pattern)
+      474 -  }
+      475 -  if funcLine <= 0 {
+      476 -    return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
+      477 -  }
+      478 -
+      479 -  // Ensure file is loaded so we can scan for leading comment lines.
+      480 -  if lines == nil {
+      481 -    data, err = os.ReadFile(filePath)
+      482 -    if err != nil {
+      483 -      return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
+      484 -    }
+      485 -    lines = strings.Split(string(data), "\n")
+      486 -  } else if data == nil {
+      487 -    data = []byte(strings.Join(lines, "\n"))
+      488 -  }
+      489 -
+      490 -  // Extend start upward to include any immediately preceding comment block.
+      491 -  // For tree-sitter-supported languages use the AST (handles block comments
+      492 -  // and is language-aware); fall back to heuristic string matching otherwise.
+      493 -  startLine = funcLine
+      494 -  if useTreeSitter {
+      495 -    var tsStart int
+      496 -    var tsErr error
+      497 -    switch {
+      498 -    case isGoFile(tag.Path):
+      499 -      tsStart, tsErr = resolveStartWithTreeSitterGo(data, funcLine)
+      500 -    case isPyFile(tag.Path):
+      501 -      tsStart, tsErr = resolveStartWithTreeSitterPython(data, funcLine)
+      502 -    case isRbFile(tag.Path):
+      503 -      tsStart, tsErr = resolveStartWithTreeSitterRuby(data, funcLine)
+      504 -    case isJavaFile(tag.Path):
+      505 -      tsStart, tsErr = resolveStartWithTreeSitterJava(data, funcLine)
+      506 -    case isCppFile(tag.Path):
+      507 -      tsStart, tsErr = resolveStartWithTreeSitterCpp(data, funcLine)
+      508 -    case isCFile(tag.Path):
+      509 -      tsStart, tsErr = resolveStartWithTreeSitterC(data, funcLine)
+      510 -    case isRustFile(tag.Path):
+      511 -      tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
+      512 -    case isJSFile(tag.Path):
+      513 -      tsStart, tsErr = resolveStartWithTreeSitterJS(data, funcLine)
+      514 -    case isTSFile(tag.Path):
+      515 -      tsStart, tsErr = resolveStartWithTreeSitterTS(data, funcLine)
+      516 -    case isHSFile(tag.Path):
+      517 -      tsStart, tsErr = resolveStartWithTreeSitterHS(data, funcLine)
+      518 -    case isKtFile(tag.Path):
+      519 -      tsStart, tsErr = resolveStartWithTreeSitterKotlin(data, funcLine)
+      520 -    case isPHPFile(tag.Path):
+      521 -      tsStart, tsErr = resolveStartWithTreeSitterPHP(data, funcLine)
+      522 -    case isMLFile(tag.Path):
+      523 -      tsStart, tsErr = resolveStartWithTreeSitterOCaml(data, funcLine)
+      524 -    case isMLIFile(tag.Path):
+      525 -      tsStart, tsErr = resolveStartWithTreeSitterOCamlInterface(data, funcLine)
+      526 -    case isLuaFile(tag.Path):
+      527 -      tsStart, tsErr = resolveStartWithTreeSitterLua(data, funcLine)
+      528 -    default:
+      529 -      startLine = scanLeadingComments(lines, funcLine)
+      530 -    }
+      531 -    if tsErr == nil && tsStart > 0 {
+      532 -      startLine = tsStart
+      533 -    }
+      534 -  } else {
+      535 -    startLine = scanLeadingComments(lines, funcLine)
+      536 -  }
+      537 -
+      538 -  if endStr, ok := tag.Extra["end"]; ok {
+      539 -    if n, parseErr := strconv.Atoi(endStr); parseErr == nil {
+      540 -      return startLine, n, nil
+      541 -    }
+      542 -  }
+      543 -
+      544 -  // end field absent: try tree-sitter using funcLine (the definition start, not the comment).
+      545 -  if useTreeSitter {
+      546 -    var tsEnd int
+      547 -    var tsErr error
+      548 -    switch {
+      549 -    case isGoFile(tag.Path):
+      550 -      tsEnd, tsErr = resolveEndWithTreeSitterGo(data, funcLine)
+      551 -    case isPyFile(tag.Path):
+      552 -      tsEnd, tsErr = resolveEndWithTreeSitterPython(data, funcLine)
+      553 -    case isRbFile(tag.Path):
+      554 -      tsEnd, tsErr = resolveEndWithTreeSitterRuby(data, funcLine)
+      555 -    case isJavaFile(tag.Path):
+      556 -      tsEnd, tsErr = resolveEndWithTreeSitterJava(data, funcLine)
+      557 -    case isCppFile(tag.Path):
+      558 -      tsEnd, tsErr = resolveEndWithTreeSitterCpp(data, funcLine)
+      559 -    case isCFile(tag.Path):
+      560 -      tsEnd, tsErr = resolveEndWithTreeSitterC(data, funcLine)
+      561 -    case isRustFile(tag.Path):
+      562 -      tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
+      563 -    case isJSFile(tag.Path):
+      564 -      tsEnd, tsErr = resolveEndWithTreeSitterJS(data, funcLine)
+      565 -    case isTSFile(tag.Path):
+      566 -      tsEnd, tsErr = resolveEndWithTreeSitterTS(data, funcLine)
+      567 -    case isHSFile(tag.Path):
+      568 -      tsEnd, tsErr = resolveEndWithTreeSitterHS(data, funcLine)
+      569 -    case isKtFile(tag.Path):
+      570 -      tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, funcLine)
+      571 -    case isPHPFile(tag.Path):
+      572 -      tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, funcLine)
+      573 -    case isMLFile(tag.Path):
+      574 -      tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, funcLine)
+      575 -    case isMLIFile(tag.Path):
+      576 -      tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, funcLine)
+      577 -    case isLuaFile(tag.Path):
+      578 -      tsEnd, tsErr = resolveEndWithTreeSitterLua(data, funcLine)
+      579 -    }
+      580 -    if tsErr == nil && tsEnd > 0 {
+      581 -      markTreeSitterUsed(ctx)
+      582 -      return startLine, tsEnd, nil
+      583 -    }
+      584 -  }
+      585 -
+      586 -  return startLine, 0, nil
+      587 -}
+      588 -
+      589 -// snippetForTag resolves a Snippet from a Tag by reading the source file.
+      590 -// contextDir is the directory containing the tags file.
+      591 -func snippetForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
+      592 -  startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
+      593 -  if err != nil {
+      594 -    return Snippet{}, err
+      595 -  }
+      596 -
+      597 -  filePath := resolveFilePath(contextDir, tag.Path)
+      598 -  data, err := os.ReadFile(filePath)
+      599 -  if err != nil {
+      600 -    return Snippet{}, fmt.Errorf("reading file %s: %w", filePath, err)
+      601 -  }
+      602 -  lines := strings.Split(string(data), "\n")
+      603 -
+      604 -  extractEnd := endLine
+      605 -  if extractEnd == 0 {
+      606 -    extractEnd = startLine
+      607 -  }
+      608 -
+      609 -  return Snippet{
+      610 -    Name:  tag.Name,
+      611 -    Path:  tag.Path,
+      612 -    Start: startLine,
+      613 -    End:   endLine,
+      614 -    Code:  extractLines(lines, startLine, extractEnd),
+      615 -  }, nil
+      616 -}
+      617 -
+      618 -// lineRangeForTag resolves the start and end line numbers for a Tag without reading
+      619 -// the full file content (the file is read only when pattern matching is needed).
+      620 -// contextDir is the directory containing the tags file.
+      621 -func lineRangeForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
+      622 -  startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
+      623 -  if err != nil {
+      624 -    return LineRange{}, err
+      625 -  }
+      626 -  return LineRange{
+      627 -    Name:  tag.Name,
+      628 -    Path:  tag.Path,
+      629 -    Start: startLine,
+      630 -    End:   endLine,
+      631 -  }, nil
+      632 -}
+      633 -
+       10  func main() {
+       11    addr := flag.String("listen", ":8999", "listen address (host:port)")
+       12    flag.StringVar(addr, "l", ":8999", "listen address (shorthand for -listen)")
+     ...
+       25    }
+       26
+       27    mux := http.NewServeMux()
+       28 +  registerHandlers(mux, useTreeSitter)
+       29
+      653 -  mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+      654 -    w.Header().Set("Content-Type", "application/json")
+      655 -    fmt.Fprintln(w, `{"status":"ok"}`)
+      656 -  })
+      657 -
+      658 -  mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+      659 -    body, err := io.ReadAll(r.Body)
+      660 -    if err != nil {
+      661 -      http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusInternalServerError)
+      662 -      return
+      663 -    }
+      664 -    pipe.mu.Lock()
+      665 -    if r.URL.Query().Get("mode") == "append" {
+      666 -      pipe.data = append(pipe.data, body...)
+      667 -    } else {
+      668 -      pipe.data = body
+      669 -    }
+      670 -    pipe.mu.Unlock()
+      671 -    w.WriteHeader(http.StatusNoContent)
+      672 -  })
+      673 -
+      674 -  mux.HandleFunc("GET /pipe/status", func(w http.ResponseWriter, r *http.Request) {
+      675 -    pipe.mu.Lock()
+      676 -    empty := len(pipe.data) == 0
+      677 -    pipe.mu.Unlock()
+      678 -    w.Header().Set("Content-Type", "application/json")
+      679 -    if empty {
+      680 -      fmt.Fprintln(w, `{"empty":true}`)
+      681 -    } else {
+      682 -      fmt.Fprintln(w, `{"empty":false}`)
+      683 -    }
+      684 -  })
+      685 -
+      686 -  mux.HandleFunc("GET /pipe", func(w http.ResponseWriter, r *http.Request) {
+      687 -    pipe.mu.Lock()
+      688 -    data := pipe.data
+      689 -    pipe.mu.Unlock()
+      690 -    w.Header().Set("Content-Type", "application/json")
+      691 -    w.Write(data)
+      692 -  })
+      693 -
+      694 -  mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+      695 -    tagsPath, err := queryTagsPath(r)
+      696 -    if err != nil {
+      697 -      http.Error(w, err.Error(), http.StatusBadRequest)
+      698 -      return
+      699 -    }
+      700 -
+      701 -    db, err := loadTagsFile(tagsPath)
+      702 -    if err != nil {
+      703 -      if errors.Is(err, os.ErrNotExist) {
+      704 -        http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      705 -      } else {
+      706 -        http.Error(w, fmt.Sprintf("failed to load tags file: %v", err), http.StatusInternalServerError)
+      707 -      }
+      708 -      return
+      709 -    }
+      710 -
+      711 -    // Collect all tags from the database
+      712 -    var all []Tag
+      713 -    for _, tags := range db.tags {
+      714 -      all = append(all, tags...)
+      715 -    }
+      716 -
+      717 -    w.Header().Set("Content-Type", "application/json")
+      718 -    if err := json.NewEncoder(w).Encode(all); err != nil {
+      719 -      log.Printf("encoding response: %v", err)
+      720 -    }
+      721 -  })
+      722 -
+      723 -  mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
+      724 -    tagName := r.PathValue("name")
+      725 -    tagsPath, err := queryTagsPath(r)
+      726 -    if err != nil {
+      727 -      http.Error(w, err.Error(), http.StatusBadRequest)
+      728 -      return
+      729 -    }
+      730 -
+      731 -    results, err := lookupTag(tagsPath, tagName)
+      732 -    if err != nil {
+      733 -      if errors.Is(err, os.ErrNotExist) {
+      734 -        http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      735 -      } else {
+      736 -        http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+      737 -      }
+      738 -      return
+      739 -    }
+      740 -
+      741 -    if len(results) == 0 {
+      742 -      http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+      743 -      return
+      744 -    }
+      745 -
+      746 -    w.Header().Set("Content-Type", "application/json")
+      747 -    if err := json.NewEncoder(w).Encode(results); err != nil {
+      748 -      log.Printf("encoding response: %v", err)
+      749 -    }
+      750 -  })
+      751 -
+      752 -  mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+      753 -    tagName := r.PathValue("name")
+      754 -    tagsPath, err := queryTagsPath(r)
+      755 -    if err != nil {
+      756 -      http.Error(w, err.Error(), http.StatusBadRequest)
+      757 -      return
+      758 -    }
+      759 -    contextDir := filepath.Dir(tagsPath)
+      760 -
+      761 -    results, err := lookupTag(tagsPath, tagName)
+      762 -    if err != nil {
+      763 -      if errors.Is(err, os.ErrNotExist) {
+      764 -        http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      765 -      } else {
+      766 -        http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+      767 -      }
+      768 -      return
+      769 -    }
+      770 -
+      771 -    if len(results) == 0 {
+      772 -      http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+      773 -      return
+      774 -    }
+      775 -
+      776 -    var snippets []Snippet
+      777 -    for _, tag := range results {
+      778 -      s, err := snippetForTag(r.Context(), tag, contextDir, useTreeSitter)
+      779 -      if err != nil {
+      780 -        http.Error(w, err.Error(), http.StatusInternalServerError)
+      781 -        return
+      782 -      }
+      783 -      snippets = append(snippets, s)
+      784 -    }
+      785 -
+      786 -    w.Header().Set("Content-Type", "application/json")
+      787 -    if err := json.NewEncoder(w).Encode(snippets); err != nil {
+      788 -      log.Printf("encoding response: %v", err)
+      789 -    }
+      790 -  })
+      791 -
+      792 -  mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+      793 -    tagName := r.PathValue("name")
+      794 -    tagsPath, err := queryTagsPath(r)
+      795 -    if err != nil {
+      796 -      http.Error(w, err.Error(), http.StatusBadRequest)
+      797 -      return
+      798 -    }
+      799 -    contextDir := filepath.Dir(tagsPath)
+      800 -
+      801 -    results, err := lookupTag(tagsPath, tagName)
+      802 -    if err != nil {
+      803 -      if errors.Is(err, os.ErrNotExist) {
+      804 -        http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+      805 -      } else {
+      806 -        http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+      807 -      }
+      808 -      return
+      809 -    }
+      810 -
+      811 -    if len(results) == 0 {
+      812 -      http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+      813 -      return
+      814 -    }
+      815 -
+      816 -    var ranges []LineRange
+      817 -    for _, tag := range results {
+      818 -      lr, err := lineRangeForTag(r.Context(), tag, contextDir, useTreeSitter)
+      819 -      if err != nil {
+      820 -        http.Error(w, err.Error(), http.StatusInternalServerError)
+      821 -        return
+      822 -      }
+      823 -      ranges = append(ranges, lr)
+      824 -    }
+      825 -
+      826 -    w.Header().Set("Content-Type", "application/json")
+      827 -    if err := json.NewEncoder(w).Encode(ranges); err != nil {
+      828 -      log.Printf("encoding response: %v", err)
+      829 -    }
+      830 -  })
+      831 -
+       30    log.Printf("listening on %s", listenAddr)
+       31    if err := http.ListenAndServe(listenAddr, corsMiddleware(accessLog(mux))); err != nil {
+       32      log.Fatalf("server error: %v", err)
+
+⏺ 次に treesitter.go を汎用ヘルパーのみに縮小し、treesitter_languages.go を作成します。
+
+⏺ Write(treesitter.go)
+  ⎿  Added 6 lines, removed 476 lines
+        3  import (
+        4    "context"
+        5    "fmt"
+        6 -  "path/filepath"
+        6
+        7    sitter "github.com/smacker/go-tree-sitter"
+        9 -  "github.com/smacker/go-tree-sitter/c"
+       10 -  "github.com/smacker/go-tree-sitter/cpp"
+       11 -  "github.com/smacker/go-tree-sitter/golang"
+       12 -  "github.com/smacker/go-tree-sitter/java"
+       13 -  "github.com/smacker/go-tree-sitter/javascript"
+       14 -  "github.com/smacker/go-tree-sitter/lua"
+       15 -  "github.com/smacker/go-tree-sitter/python"
+       16 -  "github.com/smacker/go-tree-sitter/ruby"
+       17 -  "github.com/smacker/go-tree-sitter/kotlin"
+       18 -  "github.com/smacker/go-tree-sitter/php"
+       19 -  "github.com/smacker/go-tree-sitter/rust"
+       20 -  "github.com/smacker/go-tree-sitter/typescript/typescript"
+       21 -  haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
+       22 -  ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
+        8  )
+        9
+       25 -// goDefinitionTypes is the set of tree-sitter node types treated as
+       26 -// definitions in Go source files.
+       27 -var goDefinitionTypes = map[string]bool{
+       28 -  "function_declaration": true,
+       29 -  "method_declaration":   true,
+       30 -  "type_declaration":     true,
+       31 -  "const_declaration":    true,
+       32 -  "var_declaration":      true,
+       33 -}
+       34 -
+       35 -// isGoFile reports whether path is a Go source file.
+       36 -func isGoFile(path string) bool {
+       37 -  return filepath.Ext(path) == ".go"
+       38 -}
+       39 -
+       40 -// resolveEndWithTreeSitterGo returns the 1-based end line of the Go
+       41 -// definition starting at startLine (1-based).
+       42 -func resolveEndWithTreeSitterGo(content []byte, startLine int) (int, error) {
+       43 -  return resolveEndWithTreeSitter(golang.GetLanguage(), goDefinitionTypes, content, startLine)
+       44 -}
+       45 -
+       46 -// resolveStartWithTreeSitterGo returns the 1-based start line (including any
+       47 -// leading comment block) for the Go definition whose first line is funcLine.
+       48 -func resolveStartWithTreeSitterGo(content []byte, funcLine int) (int, error) {
+       49 -  return resolveStartWithTreeSitter(golang.GetLanguage(), content, funcLine)
+       50 -}
+       51 -
+       52 -// pythonDefinitionTypes is the set of tree-sitter node types treated as
+       53 -// definitions in Python source files.
+       54 -var pythonDefinitionTypes = map[string]bool{
+       55 -  "function_definition":  true,
+       56 -  "class_definition":     true,
+       57 -  "decorated_definition": true,
+       58 -}
+       59 -
+       60 -// isPyFile reports whether path is a Python source file.
+       61 -func isPyFile(path string) bool {
+       62 -  return filepath.Ext(path) == ".py"
+       63 -}
+       64 -
+       65 -// resolveEndWithTreeSitterPython returns the 1-based end line of the Python
+       66 -// definition starting at startLine (1-based).
+       67 -func resolveEndWithTreeSitterPython(content []byte, startLine int) (int, error) {
+       68 -  return resolveEndWithTreeSitter(python.GetLanguage(), pythonDefinitionTypes, content, startLine)
+       69 -}
+       70 -
+       71 -// resolveStartWithTreeSitterPython returns the 1-based start line (including
+       72 -// any leading comment block) for the Python definition whose first line is
+       73 -// funcLine.
+       74 -func resolveStartWithTreeSitterPython(content []byte, funcLine int) (int, error) {
+       75 -  return resolveStartWithTreeSitter(python.GetLanguage(), content, funcLine)
+       76 -}
+       77 -
+       78 -// rubyDefinitionTypes is the set of tree-sitter node types treated as
+       79 -// definitions in Ruby source files.
+       80 -var rubyDefinitionTypes = map[string]bool{
+       81 -  "method":           true,
+       82 -  "singleton_method": true,
+       83 -  "class":            true,
+       84 -  "module":           true,
+       85 -  "singleton_class":  true,
+       86 -}
+       87 -
+       88 -// isRbFile reports whether path is a Ruby source file.
+       89 -func isRbFile(path string) bool {
+       90 -  return filepath.Ext(path) == ".rb"
+       91 -}
+       92 -
+       93 -// resolveEndWithTreeSitterRuby returns the 1-based end line of the Ruby
+       94 -// definition starting at startLine (1-based).
+       95 -func resolveEndWithTreeSitterRuby(content []byte, startLine int) (int, error) {
+       96 -  return resolveEndWithTreeSitter(ruby.GetLanguage(), rubyDefinitionTypes, content, startLine)
+       97 -}
+       98 -
+       99 -// resolveStartWithTreeSitterRuby returns the 1-based start line (including
+      100 -// any leading comment block) for the Ruby definition whose first line is
+      101 -// funcLine.
+      102 -func resolveStartWithTreeSitterRuby(content []byte, funcLine int) (int, error) {
+      103 -  return resolveStartWithTreeSitter(ruby.GetLanguage(), content, funcLine)
+      104 -}
+      105 -
+      106 -// javaDefinitionTypes is the set of tree-sitter node types treated as
+      107 -// definitions in Java source files.
+      108 -var javaDefinitionTypes = map[string]bool{
+      109 -  "class_declaration":           true,
+      110 -  "interface_declaration":       true,
+      111 -  "method_declaration":          true,
+      112 -  "constructor_declaration":     true,
+      113 -  "enum_declaration":            true,
+      114 -  "annotation_type_declaration": true,
+      115 -  "record_declaration":          true,
+      116 -}
+      117 -
+      118 -// isJavaFile reports whether path is a Java source file.
+      119 -func isJavaFile(path string) bool {
+      120 -  return filepath.Ext(path) == ".java"
+      121 -}
+      122 -
+      123 -// resolveEndWithTreeSitterJava returns the 1-based end line of the Java
+      124 -// definition starting at startLine (1-based).
+      125 -func resolveEndWithTreeSitterJava(content []byte, startLine int) (int, error) {
+      126 -  return resolveEndWithTreeSitter(java.GetLanguage(), javaDefinitionTypes, content, startLine)
+      127 -}
+      128 -
+      129 -// resolveStartWithTreeSitterJava returns the 1-based start line (including
+      130 -// any leading comment block) for the Java definition whose first line is
+      131 -// funcLine.
+      132 -func resolveStartWithTreeSitterJava(content []byte, funcLine int) (int, error) {
+      133 -  return resolveStartWithTreeSitter(java.GetLanguage(), content, funcLine)
+      134 -}
+      135 -
+      136 -// rustDefinitionTypes is the set of tree-sitter node types treated as
+      137 -// definitions in Rust source files.
+      138 -var rustDefinitionTypes = map[string]bool{
+      139 -  "function_item":           true,
+      140 -  "function_signature_item": true,
+      141 -  "struct_item":             true,
+      142 -  "enum_item":               true,
+      143 -  "trait_item":              true,
+      144 -  "impl_item":               true,
+      145 -  "type_item":               true,
+      146 -  "const_item":              true,
+      147 -  "static_item":             true,
+      148 -  "mod_item":                true,
+      149 -}
+      150 -
+      151 -// jsDefinitionTypes is the set of tree-sitter node types treated as
+      152 -// definitions in JavaScript source files.
+      153 -var jsDefinitionTypes = map[string]bool{
+      154 -  "function_declaration":           true,
+      155 -  "generator_function_declaration": true,
+      156 -  "class_declaration":              true,
+      157 -  "method_definition":              true,
+      158 -  "lexical_declaration":            true,
+      159 -  "variable_declaration":           true,
+      160 -  "export_statement":               true,
+      161 -}
+      162 -
+      163 -// tsDefinitionTypes is the set of tree-sitter node types treated as
+      164 -// definitions in TypeScript source files. It includes all JS definition types
+      165 -// plus TypeScript-specific constructs.
+      166 -var tsDefinitionTypes = map[string]bool{
+      167 -  // shared with JavaScript
+      168 -  "function_declaration":           true,
+      169 -  "generator_function_declaration": true,
+      170 -  "class_declaration":              true,
+      171 -  "method_definition":              true,
+      172 -  "lexical_declaration":            true,
+      173 -  "variable_declaration":           true,
+      174 -  "export_statement":               true,
+      175 -  // TypeScript-specific
+      176 -  "interface_declaration":   true,
+      177 -  "type_alias_declaration":  true,
+      178 -  "enum_declaration":        true,
+      179 -  "abstract_class_declaration": true,
+      180 -  "internal_module":         true,
+      181 -}
+      182 -
+       10  // isCommentNodeType reports whether nodeType represents a comment node in any
+       11  // of the tree-sitter grammars used by this program.
+       12  func isCommentNodeType(nodeType string) bool {
+       13    switch nodeType {
+      187 -  case "comment",           // Go, JS, TS, PHP, OCaml
+      188 -    "line_comment",       // Rust, Kotlin
+      189 -    "block_comment",      // Rust, Kotlin
+      190 -    "multiline_comment",  // some grammars
+      191 -    "shell_comment",      // PHP (#!)
+      192 -    "doc_comment":        // some grammars
+       14 +  case "comment",          // Go, JS, TS, PHP, OCaml
+       15 +    "line_comment",      // Rust, Kotlin
+       16 +    "block_comment",     // Rust, Kotlin
+       17 +    "multiline_comment", // some grammars
+       18 +    "shell_comment",     // PHP (#!)
+       19 +    "doc_comment":       // some grammars
+       20      return true
+       21    }
+       22    return false
+     ...
+       71    return int(startRow) + 1, nil
+       72  }
+       73
+      247 -// resolveStartWithTreeSitterRust returns the 1-based start line (including any
+      248 -// leading comment block) for the Rust definition whose first line is funcLine.
+      249 -func resolveStartWithTreeSitterRust(content []byte, funcLine int) (int, error) {
+      250 -  return resolveStartWithTreeSitter(rust.GetLanguage(), content, funcLine)
+      251 -}
+      252 -
+      253 -// resolveStartWithTreeSitterJS returns the 1-based start line (including any
+      254 -// leading comment block) for the JavaScript definition whose first line is funcLine.
+      255 -func resolveStartWithTreeSitterJS(content []byte, funcLine int) (int, error) {
+      256 -  return resolveStartWithTreeSitter(javascript.GetLanguage(), content, funcLine)
+      257 -}
+      258 -
+      259 -// resolveStartWithTreeSitterTS returns the 1-based start line (including any
+      260 -// leading comment block) for the TypeScript definition whose first line is funcLine.
+      261 -func resolveStartWithTreeSitterTS(content []byte, funcLine int) (int, error) {
+      262 -  return resolveStartWithTreeSitter(typescript.GetLanguage(), content, funcLine)
+      263 -}
+      264 -
+      265 -// resolveStartWithTreeSitterHS returns the 1-based start line (including any
+      266 -// leading comment block) for the Haskell definition whose first line is funcLine.
+      267 -func resolveStartWithTreeSitterHS(content []byte, funcLine int) (int, error) {
+      268 -  return resolveStartWithTreeSitter(sitter.NewLanguage(haskell.Language()), content, funcLine)
+      269 -}
+      270 -
+      271 -// resolveStartWithTreeSitterKotlin returns the 1-based start line (including any
+      272 -// leading comment block) for the Kotlin definition whose first line is funcLine.
+      273 -func resolveStartWithTreeSitterKotlin(content []byte, funcLine int) (int, error) {
+      274 -  return resolveStartWithTreeSitter(kotlin.GetLanguage(), content, funcLine)
+      275 -}
+      276 -
+      277 -// resolveStartWithTreeSitterPHP returns the 1-based start line (including any
+      278 -// leading comment block) for the PHP definition whose first line is funcLine.
+      279 -func resolveStartWithTreeSitterPHP(content []byte, funcLine int) (int, error) {
+      280 -  return resolveStartWithTreeSitter(php.GetLanguage(), content, funcLine)
+      281 -}
+      282 -
+      283 -// resolveStartWithTreeSitterOCaml returns the 1-based start line (including any
+      284 -// leading comment block) for the OCaml (.ml) definition whose first line is funcLine.
+      285 -func resolveStartWithTreeSitterOCaml(content []byte, funcLine int) (int, error) {
+      286 -  return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), content, funcLine)
+      287 -}
+      288 -
+      289 -// resolveStartWithTreeSitterOCamlInterface returns the 1-based start line
+      290 -// (including any leading comment block) for the OCaml (.mli) definition whose
+      291 -// first line is funcLine.
+      292 -func resolveStartWithTreeSitterOCamlInterface(content []byte, funcLine int) (int, error) {
+      293 -  return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), content, funcLine)
+      294 -}
+      295 -
+       74  // findDefinitionNodeAtRow returns the outermost node of one of the given
+       75  // definition types whose start row matches row (0-indexed). Falls back to
+       76  // any named node at that row if no definition-type node is found.
+     ...
+      117    return int(node.EndPoint().Row) + 1, nil // convert back to 1-based
+      118  }
+      119
+      342 -// resolveEndWithTreeSitterRust returns the 1-based end line of the Rust
+      343 -// definition starting at startLine (1-based).
+      344 -func resolveEndWithTreeSitterRust(content []byte, startLine int) (int, error) {
+      345 -  return resolveEndWithTreeSitter(rust.GetLanguage(), rustDefinitionTypes, content, startLine)
+      346 -}
+      347 -
+      348 -// resolveEndWithTreeSitterJS returns the 1-based end line of the JavaScript
+      349 -// definition starting at startLine (1-based).
+      350 -func resolveEndWithTreeSitterJS(content []byte, startLine int) (int, error) {
+      351 -  return resolveEndWithTreeSitter(javascript.GetLanguage(), jsDefinitionTypes, content, startLine)
+      352 -}
+      353 -
+      354 -// resolveEndWithTreeSitterTS returns the 1-based end line of the TypeScript
+      355 -// definition starting at startLine (1-based).
+      356 -func resolveEndWithTreeSitterTS(content []byte, startLine int) (int, error) {
+      357 -  return resolveEndWithTreeSitter(typescript.GetLanguage(), tsDefinitionTypes, content, startLine)
+      358 -}
+      359 -
+      360 -// isRustFile reports whether path is a Rust source file.
+      361 -func isRustFile(path string) bool {
+      362 -  return filepath.Ext(path) == ".rs"
+      363 -}
+      364 -
+      365 -// isJSFile reports whether path is a JavaScript source file.
+      366 -func isJSFile(path string) bool {
+      367 -  return filepath.Ext(path) == ".js"
+      368 -}
+      369 -
+      370 -// isTSFile reports whether path is a TypeScript source file.
+      371 -func isTSFile(path string) bool {
+      372 -  return filepath.Ext(path) == ".ts"
+      373 -}
+      374 -
+      375 -// isHSFile reports whether path is a Haskell source file.
+      376 -func isHSFile(path string) bool {
+      377 -  return filepath.Ext(path) == ".hs"
+      378 -}
+      379 -
+      380 -// hsDefinitionTypes is the set of tree-sitter node types treated as
+      381 -// definitions in Haskell source files.
+      382 -// Note: "type_synomym" is the spelling used by the tree-sitter-haskell grammar.
+      383 -var hsDefinitionTypes = map[string]bool{
+      384 -  "function":     true,
+      385 -  "signature":    true,
+      386 -  "data_type":    true,
+      387 -  "class":        true,
+      388 -  "instance":     true,
+      389 -  "newtype":      true,
+      390 -  "type_synomym": true,
+      391 -}
+      392 -
+      393 -// resolveEndWithTreeSitterHS returns the 1-based end line of the Haskell
+      394 -// definition starting at startLine (1-based).
+      395 -func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
+      396 -  return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
+      397 -}
+      398 -
+      399 -// isKtFile reports whether path is a Kotlin source file.
+      400 -func isKtFile(path string) bool {
+      401 -  return filepath.Ext(path) == ".kt"
+      402 -}
+      403 -
+      404 -// ktDefinitionTypes is the set of tree-sitter node types treated as
+      405 -// definitions in Kotlin source files. Kotlin interfaces and enums are
+      406 -// represented as class_declaration in the tree-sitter grammar.
+      407 -var ktDefinitionTypes = map[string]bool{
+      408 -  "function_declaration": true,
+      409 -  "class_declaration":    true,
+      410 -  "object_declaration":   true,
+      411 -}
+      412 -
+      413 -// resolveEndWithTreeSitterKotlin returns the 1-based end line of the Kotlin
+      414 -// definition starting at startLine (1-based).
+      415 -func resolveEndWithTreeSitterKotlin(content []byte, startLine int) (int, error) {
+      416 -  return resolveEndWithTreeSitter(kotlin.GetLanguage(), ktDefinitionTypes, content, startLine)
+      417 -}
+      418 -
+      419 -// isPHPFile reports whether path is a PHP source file.
+      420 -func isPHPFile(path string) bool {
+      421 -  return filepath.Ext(path) == ".php"
+      422 -}
+      423 -
+      424 -// phpDefinitionTypes is the set of tree-sitter node types treated as
+      425 -// definitions in PHP source files.
+      426 -var phpDefinitionTypes = map[string]bool{
+      427 -  "function_definition":   true,
+      428 -  "method_declaration":    true,
+      429 -  "class_declaration":     true,
+      430 -  "interface_declaration": true,
+      431 -  "trait_declaration":     true,
+      432 -}
+      433 -
+      434 -// resolveEndWithTreeSitterPHP returns the 1-based end line of the PHP
+      435 -// definition starting at startLine (1-based).
+      436 -func resolveEndWithTreeSitterPHP(content []byte, startLine int) (int, error) {
+      437 -  return resolveEndWithTreeSitter(php.GetLanguage(), phpDefinitionTypes, content, startLine)
+      438 -}
+      439 -
+      440 -// isMLFile reports whether path is an OCaml implementation file.
+      441 -func isMLFile(path string) bool {
+      442 -  return filepath.Ext(path) == ".ml"
+      443 -}
+      444 -
+      445 -// isMLIFile reports whether path is an OCaml interface file.
+      446 -func isMLIFile(path string) bool {
+      447 -  return filepath.Ext(path) == ".mli"
+      448 -}
+      449 -
+      450 -// ocamlMLDefinitionTypes is the set of tree-sitter node types treated as
+      451 -// definitions in OCaml implementation (.ml) source files.
+      452 -var ocamlMLDefinitionTypes = map[string]bool{
+      453 -  "value_definition":       true,
+      454 -  "type_definition":        true,
+      455 -  "module_definition":      true,
+      456 -  "module_type_definition": true,
+      457 -  "class_definition":       true,
+      458 -}
+      459 -
+      460 -// ocamlMLIDefinitionTypes is the set of tree-sitter node types treated as
+      461 -// definitions in OCaml interface (.mli) source files.
+      462 -var ocamlMLIDefinitionTypes = map[string]bool{
+      463 -  "value_specification":    true,
+      464 -  "type_definition":        true,
+      465 -  "module_type_definition": true,
+      466 -}
+      467 -
+      468 -// resolveEndWithTreeSitterOCaml returns the 1-based end line of the OCaml
+      469 -// implementation (.ml) definition starting at startLine (1-based).
+      470 -func resolveEndWithTreeSitterOCaml(content []byte, startLine int) (int, error) {
+      471 -  return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), ocamlMLDefinitionTypes, content, startLine)
+      472 -}
+      473 -
+      474 -// resolveEndWithTreeSitterOCamlInterface returns the 1-based end line of the
+      475 -// OCaml interface (.mli) definition starting at startLine (1-based).
+      476 -func resolveEndWithTreeSitterOCamlInterface(content []byte, startLine int) (int, error) {
+      477 -  return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), ocamlMLIDefinitionTypes, content, startLine)
+      478 -}
+      479 -
+      480 -// isCFile reports whether path is a C source or header file.
+      481 -func isCFile(path string) bool {
+      482 -  ext := filepath.Ext(path)
+      483 -  return ext == ".c" || ext == ".h"
+      484 -}
+      485 -
+      486 -// isCppFile reports whether path is a C++ source or header file.
+      487 -func isCppFile(path string) bool {
+      488 -  ext := filepath.Ext(path)
+      489 -  return ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".hh" || ext == ".hpp" || ext == ".hxx"
+      490 -}
+      491 -
+      492 -// cDefinitionTypes is the set of tree-sitter node types treated as definitions
+      493 -// in C source files.
+      494 -var cDefinitionTypes = map[string]bool{
+      495 -  "function_definition": true,
+      496 -  "struct_specifier":    true,
+      497 -  "enum_specifier":      true,
+      498 -  "union_specifier":     true,
+      499 -  "type_definition":     true,
+      500 -}
+      501 -
+      502 -// cppDefinitionTypes is the set of tree-sitter node types treated as
+      503 -// definitions in C++ source files. It extends cDefinitionTypes with
+      504 -// C++-specific constructs.
+      505 -var cppDefinitionTypes = map[string]bool{
+      506 -  // shared with C
+      507 -  "function_definition": true,
+      508 -  "struct_specifier":    true,
+      509 -  "enum_specifier":      true,
+      510 -  "union_specifier":     true,
+      511 -  "type_definition":     true,
+      512 -  // C++-specific
+      513 -  "class_specifier":      true,
+      514 -  "template_declaration": true,
+      515 -  "namespace_definition": true,
+      516 -}
+      517 -
+      518 -// resolveEndWithTreeSitterC returns the 1-based end line of the C definition
+      519 -// starting at startLine (1-based).
+      520 -func resolveEndWithTreeSitterC(content []byte, startLine int) (int, error) {
+      521 -  return resolveEndWithTreeSitter(c.GetLanguage(), cDefinitionTypes, content, startLine)
+      522 -}
+      523 -
+      524 -// resolveStartWithTreeSitterC returns the 1-based start line (including any
+      525 -// leading comment block) for the C definition whose first line is funcLine.
+      526 -func resolveStartWithTreeSitterC(content []byte, funcLine int) (int, error) {
+      527 -  return resolveStartWithTreeSitter(c.GetLanguage(), content, funcLine)
+      528 -}
+      529 -
+      530 -// resolveEndWithTreeSitterCpp returns the 1-based end line of the C++
+      531 -// definition starting at startLine (1-based).
+      532 -func resolveEndWithTreeSitterCpp(content []byte, startLine int) (int, error) {
+      533 -  return resolveEndWithTreeSitter(cpp.GetLanguage(), cppDefinitionTypes, content, startLine)
+      534 -}
+      535 -
+      536 -// resolveStartWithTreeSitterCpp returns the 1-based start line (including any
+      537 -// leading comment block) for the C++ definition whose first line is funcLine.
+      538 -func resolveStartWithTreeSitterCpp(content []byte, funcLine int) (int, error) {
+      539 -  return resolveStartWithTreeSitter(cpp.GetLanguage(), content, funcLine)
+      540 -}
+      541 -
+      542 -// isLuaFile reports whether path is a Lua source file.
+      543 -func isLuaFile(path string) bool {
+      544 -  return filepath.Ext(path) == ".lua"
+      545 -}
+      546 -
+      547 -// luaDefinitionTypes is the set of tree-sitter node types treated as
+      548 -// definitions in Lua source files.
+      549 -var luaDefinitionTypes = map[string]bool{
+      550 -  "function_statement": true,
+      551 -}
+      552 -
+      120  // rowEndsWithCommentNode reports whether any comment node in the subtree
+      121  // rooted at n has its last row equal to row (0-based). This is used for Lua
+      122  // because the Lua grammar attaches preceding newlines to comment nodes,
+     ...
+      176    }
+      177    return nil
+      178  }
+      612 -
+      613 -// resolveEndWithTreeSitterLua returns the 1-based end line of the Lua function
+      614 -// definition starting at startLine (1-based). It uses a Lua-specific node
+      615 -// search because the Lua tree-sitter grammar attaches leading newlines to
+      616 -// function_statement nodes, making their StartPoint().Row differ from the
+      617 -// actual "function" keyword line reported by ctags.
+      618 -func resolveEndWithTreeSitterLua(content []byte, startLine int) (int, error) {
+      619 -  parser := sitter.NewParser()
+      620 -  parser.SetLanguage(lua.GetLanguage())
+      621 -  tree, err := parser.ParseCtx(context.Background(), nil, content)
+      622 -  if err != nil {
+      623 -    return 0, fmt.Errorf("tree-sitter parse: %w", err)
+      624 -  }
+      625 -  defer tree.Close()
+      626 -  targetRow := uint32(startLine - 1)
+      627 -  node := findLuaFunctionStatementByFunctionStartRow(tree.RootNode(), targetRow)
+      628 -  if node == nil {
+      629 -    return 0, fmt.Errorf("no Lua function found at line %d", startLine)
+      630 -  }
+      631 -  return int(node.EndPoint().Row) + 1, nil
+      632 -}
+      633 -
+      634 -// resolveStartWithTreeSitterLua returns the 1-based start line (including any
+      635 -// leading comment block) for the Lua function whose first line is funcLine.
+      636 -// It uses end-row matching for comments to work around the Lua grammar's
+      637 -// leading-newline quirk.
+      638 -func resolveStartWithTreeSitterLua(content []byte, funcLine int) (int, error) {
+      639 -  parser := sitter.NewParser()
+      640 -  parser.SetLanguage(lua.GetLanguage())
+      641 -  tree, err := parser.ParseCtx(context.Background(), nil, content)
+      642 -  if err != nil {
+      643 -    return funcLine, fmt.Errorf("tree-sitter parse: %w", err)
+      644 -  }
+      645 -  defer tree.Close()
+      646 -  startRow := findCommentStartRowLua(tree.RootNode(), uint32(funcLine-1))
+      647 -  return int(startRow) + 1, nil
+      648 -}
+  ⎿  Found 20 new diagnostic issues in 4 files (ctrl+o to expand)
+
+⏺ Write(treesitter_languages.go)
+  ⎿  Wrote 478 lines to treesitter_languages.go
+       1 package main
+       2
+       3 import (
+       4        "context"
+       5        "fmt"
+       6        "path/filepath"
+       7
+       8        sitter "github.com/smacker/go-tree-sitter"
+       9        "github.com/smacker/go-tree-sitter/c"
+      10        "github.com/smacker/go-tree-sitter/cpp"
+     … +468 lines (ctrl+o to expand)
+  ⎿  Found 22 new diagnostic issues in 3 files (ctrl+o to expand)
+
+⏺ コンパイルを確認します。
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     parser.c:254:18: warning: null character(s) preserved in string literal [-Wnull-character]
+  ⎿  Found 6 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ ビルド成功。テストを実行します。
+
+⏺ Bash(go test ./... 2>&1 | tail -30)
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     parser.c:254:18: warning: null character(s) preserved in string literal [-Wnull-character]
+     ok         github.com/orimanabu/codesnippetd       1.101s
+
+⏺ 全テストパス。次にテストファイルを分割します。まず handlers_test.go を作成し、main_test.go の内容を適切に分割します。
+
+⏺ Write(types_test.go)
+  ⎿  Wrote 30 lines to types_test.go
+       1 package main
+       2
+       3 import (
+       4        "encoding/json"
+       5        "testing"
+       6 )
+       7
+       8 // ---- MarshalJSON tests ----
+       9
+      10 func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+     … +20 lines (ctrl+o to expand)
+
+⏺ Write(tags_test.go)
+  ⎿  Wrote 183 lines to tags_test.go
+       1 package main
+       2
+       3 import (
+       4        "errors"
+       5        "os"
+       6        "path/filepath"
+       7        "testing"
+       8 )
+       9
+      10 // ---- parseLine tests ----
+     … +173 lines (ctrl+o to expand)
+  ⎿  Found 2 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ tags_test.go を strings を使うように修正します。次に他のテストファイルを作成します。
+
+⏺ Write(tags_test.go)
+  ⎿  Added 2 lines, removed 14 lines
+       4    "errors"
+       5    "os"
+       6    "path/filepath"
+       7 +  "strings"
+       8    "testing"
+       9  )
+      10
+     ...
+      135    if err == nil {
+      136      t.Fatal("expected error for missing file")
+      137    }
+      137 -  if !errors.Is(err, os.ErrNotExist) && !containsStr(err.Error(), "no such file") {
+      138 +  if !errors.Is(err, os.ErrNotExist) && !strings.Contains(err.Error(), "no such file") {
+      139      t.Errorf("expected file-not-found error, got: %v", err)
+      140    }
+      141  }
+     ...
+      169      t.Fatalf("expected 2 tags for overloaded, got %d", len(tags))
+      170    }
+      171  }
+      171 -
+      172 -// containsStr is a helper to avoid importing strings in this file.
+      173 -func containsStr(s, substr string) bool {
+      174 -  return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+      175 -    func() bool {
+      176 -      for i := 0; i <= len(s)-len(substr); i++ {
+      177 -        if s[i:i+len(substr)] == substr {
+      178 -          return true
+      179 -        }
+      180 -      }
+      181 -      return false
+      182 -    }())
+      183 -}
+  ⎿  Found 20 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ 残りのテストファイルを作成します。
+
+⏺ Write(paths_test.go)
+  ⎿  Wrote 140 lines to paths_test.go
+      1 package main
+      2
+      3 import (
+      4         "os/user"
+      5         "path/filepath"
+      6         "testing"
+      7 )
+      8
+      9 // ---- tagsFileForContext tests ----
+     … +130 lines (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Write(lines_test.go)
+  ⎿  Wrote 116 lines to lines_test.go
+       1 package main
+       2
+       3 import "testing"
+       4
+       5 // ---- normalizeTagPattern tests ----
+       6
+       7 func TestNormalizeTagPattern_StripsAnchors(t *testing.T) {
+       8        got := normalizeTagPattern("^func MyFunc() {$")
+       9        want := "func MyFunc() {"
+      10        if got != want {
+     … +106 lines (ctrl+o to expand)
+  ⎿  Found 20 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Write(resolver_test.go)
+  ⎿  Wrote 263 lines to resolver_test.go
+      1 package main
+      2
+      3 import (
+      4         "context"
+      5         "encoding/json"
+      6         "os"
+      7         "strings"
+      8         "testing"
+      9 )
+     … +253 lines (ctrl+o to expand)
+  ⎿  Found 20 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Write(handlers_test.go)
+  ⎿  Wrote 1465 lines to handlers_test.go
+       1 package main
+       2
+       3 import (
+       4        "bytes"
+       5        "encoding/json"
+       6        "errors"
+       7        "fmt"
+       8        "io"
+       9        "log"
+      10        "net/http"
+     … +1455 lines (ctrl+o to expand)
+  ⎿  Found 20 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ main_test.go を空にして、handlers_test.go の不要なimportを削除します。
+
+⏺ Write(main_test.go)
+  ⎿  Removed 2324 lines
+         1  package main
+         2 -
+         3 -import (
+         4 -  "bytes"
+         5 -  "context"
+         6 -  "encoding/json"
+         7 -  "errors"
+         8 -  "fmt"
+         9 -  "io"
+        10 -  "log"
+        11 -  "net/http"
+        12 -  "net/http/httptest"
+        13 -  "os"
+        14 -  "os/exec"
+        15 -  "os/user"
+        16 -  "path/filepath"
+        17 -  "strings"
+        18 -  "testing"
+        19 -)
+        20 -
+        21 -// ---- parseLine tests ----
+        22 -
+        23 -func TestParseLine_SkipsMetadataLines(t *testing.T) {
+        24 -  lines := []string{
+        25 -    "!_TAG_FILE_FORMAT\t2\t/extended format/",
+        26 -    "!_TAG_FILE_SORTED\t1\t/0=unsorted/",
+        27 -    "",
+        28 -  }
+        29 -  for _, line := range lines {
+        30 -    if _, ok := parseLine(line); ok {
+        31 -      t.Errorf("expected parseLine(%q) to be skipped", line)
+        32 -    }
+        33 -  }
+        34 -}
+        35 -
+        36 -func TestParseLine_BasicFunction(t *testing.T) {
+        37 -  line := "MyFunc\tsample.go\t/^func MyFunc() {$/;\"\tkind:function\tline:10\tlanguage:Go"
+        38 -  tag, ok := parseLine(line)
+        39 -  if !ok {
+        40 -    t.Fatal("expected ok=true")
+        41 -  }
+        42 -  if tag.Type != "tag" {
+        43 -    t.Errorf("Type: got %q, want %q", tag.Type, "tag")
+        44 -  }
+        45 -  if tag.Name != "MyFunc" {
+        46 -    t.Errorf("Name: got %q, want %q", tag.Name, "MyFunc")
+        47 -  }
+        48 -  if tag.Path != "sample.go" {
+        49 -    t.Errorf("Path: got %q, want %q", tag.Path, "sample.go")
+        50 -  }
+        51 -  if tag.Pattern != "^func MyFunc() {$" {
+        52 -    t.Errorf("Pattern: got %q, want %q", tag.Pattern, "^func MyFunc() {$")
+        53 -  }
+        54 -  if tag.Kind != "function" {
+        55 -    t.Errorf("Kind: got %q, want %q", tag.Kind, "function")
+        56 -  }
+        57 -  if tag.Line != 10 {
+        58 -    t.Errorf("Line: got %d, want %d", tag.Line, 10)
+        59 -  }
+        60 -  if tag.Language != "Go" {
+        61 -    t.Errorf("Language: got %q, want %q", tag.Language, "Go")
+        62 -  }
+        63 -}
+        64 -
+        65 -func TestParseLine_LineNumberAddress(t *testing.T) {
+        66 -  // Some ctags formats use a plain line number as the address
+        67 -  line := "myVar\tsample.go\t42\tkind:variable\tlanguage:Go"
+        68 -  tag, ok := parseLine(line)
+        69 -  if !ok {
+        70 -    t.Fatal("expected ok=true")
+        71 -  }
+        72 -  if tag.Line != 42 {
+        73 -    t.Errorf("Line: got %d, want 42", tag.Line)
+        74 -  }
+        75 -  if tag.Pattern != "" {
+        76 -    t.Errorf("Pattern should be empty when address is a line number, got %q", tag.Pattern)
+        77 -  }
+        78 -}
+        79 -
+        80 -func TestParseLine_QuestionMarkPattern(t *testing.T) {
+        81 -  line := "backSearch\tsample.go\t?^func backSearch?;\"\tkind:function\tline:5\tlanguage:Go"
+        82 -  tag, ok := parseLine(line)
+        83 -  if !ok {
+        84 -    t.Fatal("expected ok=true")
+        85 -  }
+        86 -  if tag.Pattern != "^func backSearch" {
+        87 -    t.Errorf("Pattern: got %q, want %q", tag.Pattern, "^func backSearch")
+        88 -  }
+        89 -}
+        90 -
+        91 -func TestParseLine_ExtraFields(t *testing.T) {
+        92 -  line := "Run\tsample.go\t/^func (m \\*MyStruct) Run() error {$/;\"\tkind:method\tline:17\tlanguage:Go\ttyperef:typename:error"
+        93 -  tag, ok := parseLine(line)
+        94 -  if !ok {
+        95 -    t.Fatal("expected ok=true")
+        96 -  }
+        97 -  if tag.Extra["typeref"] != "typename:error" {
+        98 -    t.Errorf("Extra[typeref]: got %q, want %q", tag.Extra["typeref"], "typename:error")
+        99 -  }
+       100 -}
+       101 -
+       102 -func TestParseLine_TooFewFields(t *testing.T) {
+       103 -  if _, ok := parseLine("onlyone"); ok {
+       104 -    t.Error("expected ok=false for line with too few fields")
+       105 -  }
+       106 -  if _, ok := parseLine("two\tfields"); ok {
+       107 -    t.Error("expected ok=false for line with only two fields")
+       108 -  }
+       109 -}
+       110 -
+       111 -func TestParseLine_PatternWithEmbeddedTab(t *testing.T) {
+       112 -  // Pattern field contains a literal tab (e.g. an indented method signature).
+       113 -  // Real-world example from a Go interface tags file:
+       114 -  //   run\tpkg/machine/e2e/config_test.go\t/^      run() (*machineSession, error)$/;"\tn\tinterface:...
+       115 -  line := "run\tpkg/machine/e2e/config_test.go\t/^\trun() (*machineSession, error)$/;\"\tn\tinterface:e2e_test.MachineTestBuilder\ttyperef:typename:(*machineSess
+           -ion, error)"
+       116 -  tag, ok := parseLine(line)
+       117 -  if !ok {
+       118 -    t.Fatal("expected ok=true for pattern with embedded tab")
+       119 -  }
+       120 -  if tag.Name != "run" {
+       121 -    t.Errorf("Name: got %q, want %q", tag.Name, "run")
+       122 -  }
+       123 -  if tag.Path != "pkg/machine/e2e/config_test.go" {
+       124 -    t.Errorf("Path: got %q, want %q", tag.Path, "pkg/machine/e2e/config_test.go")
+       125 -  }
+       126 -  wantPattern := "^\trun() (*machineSession, error)$"
+       127 -  if tag.Pattern != wantPattern {
+       128 -    t.Errorf("Pattern: got %q, want %q", tag.Pattern, wantPattern)
+       129 -  }
+       130 -  if tag.Kind != "n" {
+       131 -    t.Errorf("Kind: got %q, want %q", tag.Kind, "n")
+       132 -  }
+       133 -  if tag.Extra["interface"] != "e2e_test.MachineTestBuilder" {
+       134 -    t.Errorf("Extra[interface]: got %q, want %q", tag.Extra["interface"], "e2e_test.MachineTestBuilder")
+       135 -  }
+       136 -  if tag.Extra["typeref"] != "typename:(*machineSession, error)" {
+       137 -    t.Errorf("Extra[typeref]: got %q, want %q", tag.Extra["typeref"], "typename:(*machineSession, error)")
+       138 -  }
+       139 -}
+       140 -
+       141 -// ---- loadTagsFile tests ----
+       142 -
+       143 -func TestLoadTagsFile_NotFound(t *testing.T) {
+       144 -  _, err := loadTagsFile("/nonexistent/path/tags")
+       145 -  if err == nil {
+       146 -    t.Fatal("expected error for missing file")
+       147 -  }
+       148 -  if !errors.Is(err, os.ErrNotExist) && !strings.Contains(err.Error(), "no such file") {
+       149 -    t.Errorf("expected file-not-found error, got: %v", err)
+       150 -  }
+       151 -}
+       152 -
+       153 -func TestLoadTagsFile_ParsesTagsFile(t *testing.T) {
+       154 -  db, err := loadTagsFile(filepath.Join("testdata", "tags"))
+       155 -  if err != nil {
+       156 -    t.Fatalf("loadTagsFile: %v", err)
+       157 -  }
+       158 -
+       159 -  tags := db.lookup("MyStruct")
+       160 -  if len(tags) != 1 {
+       161 -    t.Fatalf("expected 1 tag for MyStruct, got %d", len(tags))
+       162 -  }
+       163 -  if tags[0].Kind != "type" {
+       164 -    t.Errorf("Kind: got %q, want %q", tags[0].Kind, "type")
+       165 -  }
+       166 -  if tags[0].Language != "Go" {
+       167 -    t.Errorf("Language: got %q, want %q", tags[0].Language, "Go")
+       168 -  }
+       169 -}
+       170 -
+       171 -func TestLoadTagsFile_MultipleTagsSameName(t *testing.T) {
+       172 -  db, err := loadTagsFile(filepath.Join("testdata", "tags"))
+       173 -  if err != nil {
+       174 -    t.Fatalf("loadTagsFile: %v", err)
+       175 -  }
+       176 -
+       177 -  tags := db.lookup("overloaded")
+       178 -  if len(tags) != 2 {
+       179 -    t.Fatalf("expected 2 tags for overloaded, got %d", len(tags))
+       180 -  }
+       181 -}
+       182 -
+       183 -// ---- tagsFileForContext tests ----
+       184 -
+       185 -func TestTagsFileForContext_Empty(t *testing.T) {
+       186 -  got := tagsFileForContext("")
+       187 -  want := filepath.Join(".", "tags")
+       188 -  if got != want {
+       189 -    t.Errorf("got %q, want %q", got, want)
+       190 -  }
+       191 -}
+       192 -
+       193 -func TestTagsFileForContext_WithPath(t *testing.T) {
+       194 -  got := tagsFileForContext("sub/project")
+       195 -  want := filepath.Join(".", "sub", "project", "tags")
+       196 -  if got != want {
+       197 -    t.Errorf("got %q, want %q", got, want)
+       198 -  }
+       199 -}
+       200 -
+       201 -// ---- HTTP handler tests ----
+       202 -
+       203 -// newTestServer returns an httptest.Server rooted at dir, so that tags file
+       204 -// resolution (which uses relative paths from cwd) works correctly.
+       205 -func withCwd(t *testing.T, dir string, fn func()) {
+       206 -  t.Helper()
+       207 -  orig, err := os.Getwd()
+       208 -  if err != nil {
+       209 -    t.Fatal(err)
+       210 -  }
+       211 -  if err := os.Chdir(dir); err != nil {
+       212 -    t.Fatal(err)
+       213 -  }
+       214 -  t.Cleanup(func() { os.Chdir(orig) })
+       215 -  fn()
+       216 -}
+       217 -
+       218 -func newHandler(useTreeSitter bool) http.Handler {
+       219 -  mux := http.NewServeMux()
+       220 -  mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+       221 -    w.Header().Set("Content-Type", "application/json")
+       222 -    fmt.Fprintln(w, `{"status":"ok"}`)
+       223 -  })
+       224 -  mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+       225 -    tagsPath, err := queryTagsPath(r)
+       226 -    if err != nil {
+       227 -      http.Error(w, err.Error(), http.StatusBadRequest)
+       228 -      return
+       229 -    }
+       230 -    db, err := loadTagsFile(tagsPath)
+       231 -    if err != nil {
+       232 -      if errors.Is(err, os.ErrNotExist) {
+       233 -        http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+       234 -      } else {
+       235 -        http.Error(w, "failed to load tags file: "+err.Error(), http.StatusInternalServerError)
+       236 -      }
+       237 -      return
+       238 -    }
+       239 -    var all []Tag
+       240 -    for _, tags := range db.tags {
+       241 -      all = append(all, tags...)
+       242 -    }
+       243 -    w.Header().Set("Content-Type", "application/json")
+       244 -    json.NewEncoder(w).Encode(all)
+       245 -  })
+       246 -  mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) {
+       247 -    tagName := strings.TrimPrefix(r.URL.Path, "/tags/")
+       248 -    if tagName == "" {
+       249 -      http.Error(w, "tag name required", http.StatusBadRequest)
+       250 -      return
+       251 -    }
+       252 -    tagsPath, err := queryTagsPath(r)
+       253 -    if err != nil {
+       254 -      http.Error(w, err.Error(), http.StatusBadRequest)
+       255 -      return
+       256 -    }
+       257 -    results, err := lookupTag(tagsPath, tagName)
+       258 -    if err != nil {
+       259 -      if errors.Is(err, os.ErrNotExist) {
+       260 -        http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+       261 -      } else {
+       262 -        http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+       263 -      }
+       264 -      return
+       265 -    }
+       266 -    if len(results) == 0 {
+       267 -      http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+       268 -      return
+       269 -    }
+       270 -    w.Header().Set("Content-Type", "application/json")
+       271 -    json.NewEncoder(w).Encode(results)
+       272 -  })
+       273 -  mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
+       274 -    tagName := r.PathValue("name")
+       275 -    tagsPath, err := queryTagsPath(r)
+       276 -    if err != nil {
+       277 -      http.Error(w, err.Error(), http.StatusBadRequest)
+       278 -      return
+       279 -    }
+       280 -    contextDir := filepath.Dir(tagsPath)
+       281 -
+       282 -    results, err := lookupTag(tagsPath, tagName)
+       283 -    if err != nil {
+       284 -      if errors.Is(err, os.ErrNotExist) {
+       285 -        http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+       286 -      } else {
+       287 -        http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+       288 -      }
+       289 -      return
+       290 -    }
+       291 -    if len(results) == 0 {
+       292 -      http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+       293 -      return
+       294 -    }
+       295 -
+       296 -    var snippets []Snippet
+       297 -    for _, tag := range results {
+       298 -      s, err := snippetForTag(r.Context(), tag, contextDir, useTreeSitter)
+       299 -      if err != nil {
+       300 -        http.Error(w, err.Error(), http.StatusInternalServerError)
+       301 -        return
+       302 -      }
+       303 -      snippets = append(snippets, s)
+       304 -    }
+       305 -
+       306 -    w.Header().Set("Content-Type", "application/json")
+       307 -    json.NewEncoder(w).Encode(snippets)
+       308 -  })
+       309 -  mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
+       310 -    tagName := r.PathValue("name")
+       311 -    tagsPath, err := queryTagsPath(r)
+       312 -    if err != nil {
+       313 -      http.Error(w, err.Error(), http.StatusBadRequest)
+       314 -      return
+       315 -    }
+       316 -    contextDir := filepath.Dir(tagsPath)
+       317 -
+       318 -    results, err := lookupTag(tagsPath, tagName)
+       319 -    if err != nil {
+       320 -      if errors.Is(err, os.ErrNotExist) {
+       321 -        http.Error(w, "tags file not found: "+tagsPath, http.StatusNotFound)
+       322 -      } else {
+       323 -        http.Error(w, "readtags error: "+err.Error(), http.StatusInternalServerError)
+       324 -      }
+       325 -      return
+       326 -    }
+       327 -    if len(results) == 0 {
+       328 -      http.Error(w, "tag not found: "+tagName, http.StatusNotFound)
+       329 -      return
+       330 -    }
+       331 -
+       332 -    var ranges []LineRange
+       333 -    for _, tag := range results {
+       334 -      lr, err := lineRangeForTag(r.Context(), tag, contextDir, useTreeSitter)
+       335 -      if err != nil {
+       336 -        http.Error(w, err.Error(), http.StatusInternalServerError)
+       337 -        return
+       338 -      }
+       339 -      ranges = append(ranges, lr)
+       340 -    }
+       341 -
+       342 -    w.Header().Set("Content-Type", "application/json")
+       343 -    json.NewEncoder(w).Encode(ranges)
+       344 -  })
+       345 -
+       346 -  mux.HandleFunc("POST /pipe", func(w http.ResponseWriter, r *http.Request) {
+       347 -    body, err := io.ReadAll(r.Body)
+       348 -    if err != nil {
+       349 -      http.Error(w, "failed to read request body: "+err.Error(), http.StatusInternalServerError)
+       350 -      return
+       351 -    }
+       352 -    pipe.mu.Lock()
+       353 -    if r.URL.Query().Get("mode") == "append" {
+       354 -      pipe.data = append(pipe.data, body...)
+       355 -    } else {
+       356 -      pipe.data = body
+       357 -    }
+       358 -    pipe.mu.Unlock()
+       359 -    w.WriteHeader(http.StatusNoContent)
+       360 -  })
+       361 -
+       362 -  mux.HandleFunc("GET /pipe/status", func(w http.ResponseWriter, r *http.Request) {
+       363 -    pipe.mu.Lock()
+       364 -    empty := len(pipe.data) == 0
+       365 -    pipe.mu.Unlock()
+       366 -    w.Header().Set("Content-Type", "application/json")
+       367 -    if empty {
+       368 -      fmt.Fprintln(w, `{"empty":true}`)
+       369 -    } else {
+       370 -      fmt.Fprintln(w, `{"empty":false}`)
+       371 -    }
+       372 -  })
+       373 -
+       374 -  mux.HandleFunc("GET /pipe", func(w http.ResponseWriter, r *http.Request) {
+       375 -    pipe.mu.Lock()
+       376 -    data := pipe.data
+       377 -    pipe.mu.Unlock()
+       378 -    w.Header().Set("Content-Type", "application/json")
+       379 -    w.Write(data)
+       380 -  })
+       381 -
+       382 -  return accessLog(mux)
+       383 -}
+       384 -
+       385 -func TestHandler_ReturnsTagJSON(t *testing.T) {
+       386 -  withCwd(t, "testdata", func() {
+       387 -    srv := httptest.NewServer(newHandler(false))
+       388 -    defer srv.Close()
+       389 -
+       390 -    resp, err := http.Get(srv.URL + "/tags/MyStruct")
+       391 -    if err != nil {
+       392 -      t.Fatal(err)
+       393 -    }
+       394 -    defer resp.Body.Close()
+       395 -
+       396 -    if resp.StatusCode != http.StatusOK {
+       397 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       398 -    }
+       399 -    if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+       400 -      t.Errorf("Content-Type: got %q, want application/json", ct)
+       401 -    }
+       402 -
+       403 -    var tags []map[string]interface{}
+       404 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       405 -      t.Fatalf("decode: %v", err)
+       406 -    }
+       407 -    if len(tags) != 1 {
+       408 -      t.Fatalf("expected 1 tag, got %d", len(tags))
+       409 -    }
+       410 -    if tags[0]["_type"] != "tag" {
+       411 -      t.Errorf("_type: got %v, want tag", tags[0]["_type"])
+       412 -    }
+       413 -    if tags[0]["name"] != "MyStruct" {
+       414 -      t.Errorf("name: got %v, want MyStruct", tags[0]["name"])
+       415 -    }
+       416 -    if tags[0]["kind"] != "type" {
+       417 -      t.Errorf("kind: got %v, want type", tags[0]["kind"])
+       418 -    }
+       419 -    if tags[0]["language"] != "Go" {
+       420 -      t.Errorf("language: got %v, want Go", tags[0]["language"])
+       421 -    }
+       422 -  })
+       423 -}
+       424 -
+       425 -func TestHandler_MultipleTagsSameName(t *testing.T) {
+       426 -  withCwd(t, "testdata", func() {
+       427 -    srv := httptest.NewServer(newHandler(false))
+       428 -    defer srv.Close()
+       429 -
+       430 -    resp, err := http.Get(srv.URL + "/tags/overloaded")
+       431 -    if err != nil {
+       432 -      t.Fatal(err)
+       433 -    }
+       434 -    defer resp.Body.Close()
+       435 -
+       436 -    if resp.StatusCode != http.StatusOK {
+       437 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       438 -    }
+       439 -
+       440 -    var tags []map[string]interface{}
+       441 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       442 -      t.Fatalf("decode: %v", err)
+       443 -    }
+       444 -    if len(tags) != 2 {
+       445 -      t.Fatalf("expected 2 tags, got %d", len(tags))
+       446 -    }
+       447 -  })
+       448 -}
+       449 -
+       450 -func TestHandler_TagNotFound(t *testing.T) {
+       451 -  withCwd(t, "testdata", func() {
+       452 -    srv := httptest.NewServer(newHandler(false))
+       453 -    defer srv.Close()
+       454 -
+       455 -    resp, err := http.Get(srv.URL + "/tags/NonExistentTag")
+       456 -    if err != nil {
+       457 -      t.Fatal(err)
+       458 -    }
+       459 -    defer resp.Body.Close()
+       460 -
+       461 -    if resp.StatusCode != http.StatusNotFound {
+       462 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+       463 -    }
+       464 -  })
+       465 -}
+       466 -
+       467 -func TestHandler_MissingTagName(t *testing.T) {
+       468 -  withCwd(t, "testdata", func() {
+       469 -    srv := httptest.NewServer(newHandler(false))
+       470 -    defer srv.Close()
+       471 -
+       472 -    resp, err := http.Get(srv.URL + "/tags/")
+       473 -    if err != nil {
+       474 -      t.Fatal(err)
+       475 -    }
+       476 -    defer resp.Body.Close()
+       477 -
+       478 -    if resp.StatusCode != http.StatusBadRequest {
+       479 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusBadRequest)
+       480 -    }
+       481 -  })
+       482 -}
+       483 -
+       484 -func TestHandler_TagsFileNotFound(t *testing.T) {
+       485 -  withCwd(t, t.TempDir(), func() {
+       486 -    srv := httptest.NewServer(newHandler(false))
+       487 -    defer srv.Close()
+       488 -
+       489 -    resp, err := http.Get(srv.URL + "/tags/anything")
+       490 -    if err != nil {
+       491 -      t.Fatal(err)
+       492 -    }
+       493 -    defer resp.Body.Close()
+       494 -
+       495 -    if resp.StatusCode != http.StatusNotFound {
+       496 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+       497 -    }
+       498 -  })
+       499 -}
+       500 -
+       501 -func TestHandler_ContextQueryParam(t *testing.T) {
+       502 -  withCwd(t, "testdata", func() {
+       503 -    srv := httptest.NewServer(newHandler(false))
+       504 -    defer srv.Close()
+       505 -
+       506 -    resp, err := http.Get(srv.URL + "/tags/SubFunc?context=sub")
+       507 -    if err != nil {
+       508 -      t.Fatal(err)
+       509 -    }
+       510 -    defer resp.Body.Close()
+       511 -
+       512 -    if resp.StatusCode != http.StatusOK {
+       513 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       514 -    }
+       515 -
+       516 -    var tags []map[string]interface{}
+       517 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       518 -      t.Fatalf("decode: %v", err)
+       519 -    }
+       520 -    if len(tags) != 1 {
+       521 -      t.Fatalf("expected 1 tag, got %d", len(tags))
+       522 -    }
+       523 -    if tags[0]["name"] != "SubFunc" {
+       524 -      t.Errorf("name: got %v, want SubFunc", tags[0]["name"])
+       525 -    }
+       526 -  })
+       527 -}
+       528 -
+       529 -func TestHandler_ExtraFieldsInlined(t *testing.T) {
+       530 -  withCwd(t, "testdata", func() {
+       531 -    srv := httptest.NewServer(newHandler(false))
+       532 -    defer srv.Close()
+       533 -
+       534 -    resp, err := http.Get(srv.URL + "/tags/Run")
+       535 -    if err != nil {
+       536 -      t.Fatal(err)
+       537 -    }
+       538 -    defer resp.Body.Close()
+       539 -
+       540 -    if resp.StatusCode != http.StatusOK {
+       541 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       542 -    }
+       543 -
+       544 -    var tags []map[string]interface{}
+       545 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       546 -      t.Fatalf("decode: %v", err)
+       547 -    }
+       548 -    if len(tags) != 1 {
+       549 -      t.Fatalf("expected 1 tag, got %d", len(tags))
+       550 -    }
+       551 -    // typeref is an extension field and must be inlined at top level
+       552 -    if tags[0]["typeref"] != "typename:error" {
+       553 -      t.Errorf("typeref: got %v, want typename:error", tags[0]["typeref"])
+       554 -    }
+       555 -  })
+       556 -}
+       557 -
+       558 -// ---- /healthz handler tests ----
+       559 -
+       560 -func TestHealthz_ReturnsOK(t *testing.T) {
+       561 -  req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+       562 -  w := httptest.NewRecorder()
+       563 -  newHandler(false).ServeHTTP(w, req)
+       564 -
+       565 -  if w.Code != http.StatusOK {
+       566 -    t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+       567 -  }
+       568 -  if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+       569 -    t.Errorf("Content-Type: got %q, want application/json", ct)
+       570 -  }
+       571 -  var body map[string]string
+       572 -  if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+       573 -    t.Fatalf("decode: %v", err)
+       574 -  }
+       575 -  if body["status"] != "ok" {
+       576 -    t.Errorf("status field: got %q, want %q", body["status"], "ok")
+       577 -  }
+       578 -}
+       579 -
+       580 -// ---- accessLog middleware tests ----
+       581 -
+       582 -// captureLog redirects the default logger to a buffer for the duration of fn.
+       583 -func captureLog(t *testing.T, fn func()) string {
+       584 -  t.Helper()
+       585 -  var buf bytes.Buffer
+       586 -  log.SetOutput(&buf)
+       587 -  defer log.SetOutput(os.Stderr)
+       588 -  fn()
+       589 -  return buf.String()
+       590 -}
+       591 -
+       592 -func TestAccessLog_LogsMethodAndPath(t *testing.T) {
+       593 -  output := captureLog(t, func() {
+       594 -    req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+       595 -    w := httptest.NewRecorder()
+       596 -    newHandler(false).ServeHTTP(w, req)
+       597 -  })
+       598 -  if !strings.Contains(output, "GET") {
+       599 -    t.Errorf("log output missing method GET: %q", output)
+       600 -  }
+       601 -  if !strings.Contains(output, "/healthz") {
+       602 -    t.Errorf("log output missing path /healthz: %q", output)
+       603 -  }
+       604 -}
+       605 -
+       606 -func TestAccessLog_LogsStatusCode(t *testing.T) {
+       607 -  output := captureLog(t, func() {
+       608 -    req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+       609 -    w := httptest.NewRecorder()
+       610 -    newHandler(false).ServeHTTP(w, req)
+       611 -  })
+       612 -  if !strings.Contains(output, "200") {
+       613 -    t.Errorf("log output missing status 200: %q", output)
+       614 -  }
+       615 -}
+       616 -
+       617 -func TestAccessLog_LogsErrorStatusCode(t *testing.T) {
+       618 -  output := captureLog(t, func() {
+       619 -    req := httptest.NewRequest(http.MethodGet, "/tags/", nil)
+       620 -    w := httptest.NewRecorder()
+       621 -    newHandler(false).ServeHTTP(w, req)
+       622 -  })
+       623 -  if !strings.Contains(output, "400") {
+       624 -    t.Errorf("log output missing status 400: %q", output)
+       625 -  }
+       626 -}
+       627 -
+       628 -func TestAccessLog_PassesThroughResponse(t *testing.T) {
+       629 -  req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+       630 -  w := httptest.NewRecorder()
+       631 -  newHandler(false).ServeHTTP(w, req)
+       632 -
+       633 -  if w.Code != http.StatusOK {
+       634 -    t.Errorf("status: got %d, want %d", w.Code, http.StatusOK)
+       635 -  }
+       636 -}
+       637 -
+       638 -// ---- GET /tags (list all) handler tests ----
+       639 -
+       640 -func TestHandler_ListAllTags_ReturnsAllTags(t *testing.T) {
+       641 -  withCwd(t, "testdata", func() {
+       642 -    srv := httptest.NewServer(newHandler(false))
+       643 -    defer srv.Close()
+       644 -
+       645 -    resp, err := http.Get(srv.URL + "/tags")
+       646 -    if err != nil {
+       647 -      t.Fatal(err)
+       648 -    }
+       649 -    defer resp.Body.Close()
+       650 -
+       651 -    if resp.StatusCode != http.StatusOK {
+       652 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       653 -    }
+       654 -    if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+       655 -      t.Errorf("Content-Type: got %q, want application/json", ct)
+       656 -    }
+       657 -
+       658 -    var tags []map[string]interface{}
+       659 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       660 -      t.Fatalf("decode: %v", err)
+       661 -    }
+       662 -    // testdata/tags has 8 entries (overloaded appears twice, lineonly once, etc.)
+       663 -    if len(tags) == 0 {
+       664 -      t.Fatal("expected non-empty tag list")
+       665 -    }
+       666 -    // Every entry must have _type == "tag"
+       667 -    for i, tag := range tags {
+       668 -      if tag["_type"] != "tag" {
+       669 -        t.Errorf("tags[%d]._type: got %v, want tag", i, tag["_type"])
+       670 -      }
+       671 -    }
+       672 -  })
+       673 -}
+       674 -
+       675 -func TestHandler_ListAllTags_CountMatchesFile(t *testing.T) {
+       676 -  withCwd(t, "testdata", func() {
+       677 -    srv := httptest.NewServer(newHandler(false))
+       678 -    defer srv.Close()
+       679 -
+       680 -    resp, err := http.Get(srv.URL + "/tags")
+       681 -    if err != nil {
+       682 -      t.Fatal(err)
+       683 -    }
+       684 -    defer resp.Body.Close()
+       685 -
+       686 -    var tags []map[string]interface{}
+       687 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       688 -      t.Fatalf("decode: %v", err)
+       689 -    }
+       690 -    // testdata/tags has 9 non-metadata lines
+       691 -    if len(tags) != 9 {
+       692 -      t.Errorf("expected 9 tags, got %d", len(tags))
+       693 -    }
+       694 -  })
+       695 -}
+       696 -
+       697 -func TestHandler_ListAllTags_ContextQueryParam(t *testing.T) {
+       698 -  withCwd(t, "testdata", func() {
+       699 -    srv := httptest.NewServer(newHandler(false))
+       700 -    defer srv.Close()
+       701 -
+       702 -    resp, err := http.Get(srv.URL + "/tags?context=sub")
+       703 -    if err != nil {
+       704 -      t.Fatal(err)
+       705 -    }
+       706 -    defer resp.Body.Close()
+       707 -
+       708 -    if resp.StatusCode != http.StatusOK {
+       709 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+       710 -    }
+       711 -
+       712 -    var tags []map[string]interface{}
+       713 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+       714 -      t.Fatalf("decode: %v", err)
+       715 -    }
+       716 -    if len(tags) == 0 {
+       717 -      t.Fatal("expected non-empty tag list from sub context")
+       718 -    }
+       719 -    names := make(map[string]bool)
+       720 -    for _, tag := range tags {
+       721 -      if n, ok := tag["name"].(string); ok {
+       722 -        names[n] = true
+       723 -      }
+       724 -    }
+       725 -    if !names["SubFunc"] {
+       726 -      t.Errorf("expected SubFunc in sub context tags, got names: %v", names)
+       727 -    }
+       728 -  })
+       729 -}
+       730 -
+       731 -func TestHandler_ListAllTags_TagsFileNotFound(t *testing.T) {
+       732 -  withCwd(t, t.TempDir(), func() {
+       733 -    srv := httptest.NewServer(newHandler(false))
+       734 -    defer srv.Close()
+       735 -
+       736 -    resp, err := http.Get(srv.URL + "/tags")
+       737 -    if err != nil {
+       738 -      t.Fatal(err)
+       739 -    }
+       740 -    defer resp.Body.Close()
+       741 -
+       742 -    if resp.StatusCode != http.StatusNotFound {
+       743 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+       744 -    }
+       745 -  })
+       746 -}
+       747 -
+       748 -// ---- normalizeTagPattern tests ----
+       749 -
+       750 -func TestNormalizeTagPattern_StripsAnchors(t *testing.T) {
+       751 -  got := normalizeTagPattern("^func MyFunc() {$")
+       752 -  want := "func MyFunc() {"
+       753 -  if got != want {
+       754 -    t.Errorf("got %q, want %q", got, want)
+       755 -  }
+       756 -}
+       757 -
+       758 -func TestNormalizeTagPattern_UnescapesAsterisk(t *testing.T) {
+       759 -  got := normalizeTagPattern(`^func (m \*MyStruct) Run() {$`)
+       760 -  want := "func (m *MyStruct) Run() {"
+       761 -  if got != want {
+       762 -    t.Errorf("got %q, want %q", got, want)
+       763 -  }
+       764 -}
+       765 -
+       766 -func TestNormalizeTagPattern_NoAnchors(t *testing.T) {
+       767 -  got := normalizeTagPattern("func plain")
+       768 -  if got != "func plain" {
+       769 -    t.Errorf("got %q, want %q", got, "func plain")
+       770 -  }
+       771 -}
+       772 -
+       773 -// ---- findPatternLine tests ----
+       774 -
+       775 -func TestFindPatternLine_Found(t *testing.T) {
+       776 -  lines := []string{"package main", "", "func MyFunc() {", "\treturn", "}"}
+       777 -  // ctags-style pattern with anchors
+       778 -  got := findPatternLine(lines, "^func MyFunc() {$")
+       779 -  if got != 3 {
+       780 -    t.Errorf("got %d, want 3", got)
+       781 -  }
+       782 -}
+       783 -
+       784 -func TestFindPatternLine_NotFound(t *testing.T) {
+       785 -  lines := []string{"foo", "bar", "baz"}
+       786 -  got := findPatternLine(lines, "^nothere$")
+       787 -  if got != -1 {
+       788 -    t.Errorf("got %d, want -1", got)
+       789 -  }
+       790 -}
+       791 -
+       792 -func TestFindPatternLine_FirstMatchWins(t *testing.T) {
+       793 -  lines := []string{"func foo() {", "// func foo is here", "func foo() {"}
+       794 -  got := findPatternLine(lines, "^func foo() {$")
+       795 -  if got != 1 {
+       796 -    t.Errorf("got %d, want 1", got)
+       797 -  }
+       798 -}
+       799 -
+       800 -func TestFindPatternLine_EmptyLines(t *testing.T) {
+       801 -  got := findPatternLine([]string{}, "^anything$")
+       802 -  if got != -1 {
+       803 -    t.Errorf("got %d, want -1", got)
+       804 -  }
+       805 -}
+       806 -
+       807 -func TestFindPatternLine_UnescapedPattern(t *testing.T) {
+       808 -  lines := []string{"package p", "", `func (m *MyStruct) Run() error {`}
+       809 -  got := findPatternLine(lines, `^func (m \*MyStruct) Run() error {$`)
+       810 -  if got != 3 {
+       811 -    t.Errorf("got %d, want 3", got)
+       812 -  }
+       813 -}
+       814 -
+       815 -// ---- extractLines tests ----
+       816 -
+       817 -func TestExtractLines_Basic(t *testing.T) {
+       818 -  lines := []string{"a", "b", "c", "d", "e"}
+       819 -  got := extractLines(lines, 2, 4)
+       820 -  want := "b\nc\nd"
+       821 -  if got != want {
+       822 -    t.Errorf("got %q, want %q", got, want)
+       823 -  }
+       824 -}
+       825 -
+       826 -func TestExtractLines_SingleLine(t *testing.T) {
+       827 -  lines := []string{"a", "b", "c"}
+       828 -  got := extractLines(lines, 2, 2)
+       829 -  if got != "b" {
+       830 -    t.Errorf("got %q, want %q", got, "b")
+       831 -  }
+       832 -}
+       833 -
+       834 -func TestExtractLines_ClampsEndBeyondEOF(t *testing.T) {
+       835 -  lines := []string{"a", "b", "c"}
+       836 -  got := extractLines(lines, 2, 100)
+       837 -  want := "b\nc"
+       838 -  if got != want {
+       839 -    t.Errorf("got %q, want %q", got, want)
+       840 -  }
+       841 -}
+       842 -
+       843 -func TestExtractLines_ClampsStartBelowOne(t *testing.T) {
+       844 -  lines := []string{"a", "b", "c"}
+       845 -  got := extractLines(lines, 0, 2)
+       846 -  want := "a\nb"
+       847 -  if got != want {
+       848 -    t.Errorf("got %q, want %q", got, want)
+       849 -  }
+       850 -}
+       851 -
+       852 -func TestExtractLines_FullFile(t *testing.T) {
+       853 -  lines := []string{"x", "y", "z"}
+       854 -  got := extractLines(lines, 1, 3)
+       855 -  want := "x\ny\nz"
+       856 -  if got != want {
+       857 -    t.Errorf("got %q, want %q", got, want)
+       858 -  }
+       859 -}
+       860 -
+       861 -// ---- snippetForTag tests ----
+       862 -
+       863 -func writeTemp(t *testing.T, content string) string {
+       864 -  t.Helper()
+       865 -  f, err := os.CreateTemp(t.TempDir(), "src*.go")
+       866 -  if err != nil {
+       867 -    t.Fatal(err)
+       868 -  }
+       869 -  if _, err := f.WriteString(content); err != nil {
+       870 -    t.Fatal(err)
+       871 -  }
+       872 -  f.Close()
+       873 -  return f.Name()
+       874 -}
+       875 -
+       876 -func TestSnippetForTag_WithLineAndEndField(t *testing.T) {
+       877 -  src := "package p\n\nfunc Greet() {\n\treturn\n}\n\nvar x = 1\n"
+       878 -  path := writeTemp(t, src)
+       879 -
+       880 -  tag := Tag{
+       881 -    Name:  "Greet",
+       882 -    Path:  path,
+       883 -    Line:  3,
+       884 -    Extra: map[string]string{"end": "5"},
+       885 -  }
+       886 -  s, err := snippetForTag(context.Background(), tag, ".", false)
+       887 -  if err != nil {
+       888 -    t.Fatal(err)
+       889 -  }
+       890 -  if s.Start != 3 {
+       891 -    t.Errorf("Start: got %d, want 3", s.Start)
+       892 -  }
+       893 -  if s.End != 5 {
+       894 -    t.Errorf("End: got %d, want 5", s.End)
+       895 -  }
+       896 -  if !strings.Contains(s.Code, "func Greet") {
+       897 -    t.Errorf("Code should contain func Greet, got %q", s.Code)
+       898 -  }
+       899 -  if strings.Contains(s.Code, "var x") {
+       900 -    t.Errorf("Code should not contain lines beyond end, got %q", s.Code)
+       901 -  }
+       902 -}
+       903 -
+       904 -func TestSnippetForTag_WithPatternAndEndField(t *testing.T) {
+       905 -  src := "package p\n\nfunc Hello() {\n}\n\nvar y = 2\n"
+       906 -  path := writeTemp(t, src)
+       907 -
+       908 -  // Line is 0, so pattern search is used; pattern uses ctags-style anchors
+       909 -  tag := Tag{
+       910 -    Name:    "Hello",
+       911 -    Path:    path,
+       912 -    Pattern: "^func Hello() {$",
+       913 -    Extra:   map[string]string{"end": "4"},
+       914 -  }
+       915 -  s, err := snippetForTag(context.Background(), tag, ".", false)
+       916 -  if err != nil {
+       917 -    t.Fatal(err)
+       918 -  }
+       919 -  if s.Start != 3 {
+       920 -    t.Errorf("Start: got %d, want 3", s.Start)
+       921 -  }
+       922 -  if s.End != 4 {
+       923 -    t.Errorf("End: got %d, want 4", s.End)
+       924 -  }
+       925 -}
+       926 -
+       927 -func TestSnippetForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
+       928 -  src := "line1\nfunc Foo() {\n\treturn\n}\n"
+       929 -  path := writeTemp(t, src)
+       930 -
+       931 -  tag := Tag{
+       932 -    Name:  "Foo",
+       933 -    Path:  path,
+       934 -    Line:  2,
+       935 -    Extra: map[string]string{},
+       936 -  }
+       937 -  s, err := snippetForTag(context.Background(), tag, ".", false)
+       938 -  if err != nil {
+       939 -    t.Fatal(err)
+       940 -  }
+       941 -  if s.Start != 2 {
+       942 -    t.Errorf("Start: got %d, want 2", s.Start)
+       943 -  }
+       944 -  // End must be 0 when Extra["end"] is absent and tree-sitter is disabled
+       945 -  if s.End != 0 {
+       946 -    t.Errorf("End: got %d, want 0", s.End)
+       947 -  }
+       948 -}
+       949 -
+       950 -func TestSnippetForTag_WithoutEndField_CodeIsSingleLine(t *testing.T) {
+       951 -  src := "line1\nfunc Foo() {\n\treturn\n}\n"
+       952 -  path := writeTemp(t, src)
+       953 -
+       954 -  tag := Tag{
+       955 -    Name:  "Foo",
+       956 -    Path:  path,
+       957 -    Line:  2,
+       958 -    Extra: map[string]string{},
+       959 -  }
+       960 -  s, err := snippetForTag(context.Background(), tag, ".", false)
+       961 -  if err != nil {
+       962 -    t.Fatal(err)
+       963 -  }
+       964 -  // Code must contain only the single start line, not the full function body
+       965 -  if s.Code != "func Foo() {" {
+       966 -    t.Errorf("Code: got %q, want %q", s.Code, "func Foo() {")
+       967 -  }
+       968 -}
+       969 -
+       970 -func TestSnippetForTag_FileNotFound(t *testing.T) {
+       971 -  tag := Tag{
+       972 -    Name:  "Foo",
+       973 -    Path:  "/nonexistent/path/src.go",
+       974 -    Line:  1,
+       975 -    Extra: map[string]string{},
+       976 -  }
+       977 -  _, err := snippetForTag(context.Background(), tag, ".", false)
+       978 -  if err == nil {
+       979 -    t.Fatal("expected error for missing source file")
+       980 -  }
+       981 -}
+       982 -
+       983 -func TestSnippetForTag_PatternNotFoundInFile(t *testing.T) {
+       984 -  src := "package p\n\nfunc Bar() {}\n"
+       985 -  path := writeTemp(t, src)
+       986 -
+       987 -  // Line is 0 and pattern doesn't match → error
+       988 -  tag := Tag{
+       989 -    Name:    "Foo",
+       990 -    Path:    path,
+       991 -    Pattern: "func Foo",
+       992 -    Extra:   map[string]string{},
+       993 -  }
+       994 -  _, err := snippetForTag(context.Background(), tag, ".", false)
+       995 -  if err == nil {
+       996 -    t.Fatal("expected error when pattern not found")
+       997 -  }
+       998 -  if !strings.Contains(err.Error(), "cannot determine start line") {
+       999 -    t.Errorf("unexpected error: %v", err)
+      1000 -  }
+      1001 -}
+      1002 -
+      1003 -// ---- GET /snippets/{name} handler tests ----
+      1004 -
+      1005 -func TestSnippetHandler_ReturnsJSON(t *testing.T) {
+      1006 -  withCwd(t, "testdata", func() {
+      1007 -    srv := httptest.NewServer(newHandler(false))
+      1008 -    defer srv.Close()
+      1009 -
+      1010 -    resp, err := http.Get(srv.URL + "/snippets/NewMyStruct")
+      1011 -    if err != nil {
+      1012 -      t.Fatal(err)
+      1013 -    }
+      1014 -    defer resp.Body.Close()
+      1015 -
+      1016 -    if resp.StatusCode != http.StatusOK {
+      1017 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1018 -    }
+      1019 -    if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+      1020 -      t.Errorf("Content-Type: got %q, want application/json", ct)
+      1021 -    }
+      1022 -
+      1023 -    var snippets []Snippet
+      1024 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1025 -      t.Fatalf("decode: %v", err)
+      1026 -    }
+      1027 -    if len(snippets) != 1 {
+      1028 -      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1029 -    }
+      1030 -  })
+      1031 -}
+      1032 -
+      1033 -func TestSnippetHandler_SnippetFields(t *testing.T) {
+      1034 -  withCwd(t, "testdata", func() {
+      1035 -    srv := httptest.NewServer(newHandler(false))
+      1036 -    defer srv.Close()
+      1037 -
+      1038 -    resp, err := http.Get(srv.URL + "/snippets/NewMyStruct")
+      1039 -    if err != nil {
+      1040 -      t.Fatal(err)
+      1041 -    }
+      1042 -    defer resp.Body.Close()
+      1043 -
+      1044 -    var snippets []Snippet
+      1045 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1046 -      t.Fatalf("decode: %v", err)
+      1047 -    }
+      1048 -    s := snippets[0]
+      1049 -
+      1050 -    if s.Name != "NewMyStruct" {
+      1051 -      t.Errorf("Name: got %q, want NewMyStruct", s.Name)
+      1052 -    }
+      1053 -    if s.Start != 11 {
+      1054 -      t.Errorf("Start: got %d, want 11", s.Start)
+      1055 -    }
+      1056 -    if s.End != 13 {
+      1057 -      t.Errorf("End: got %d, want 13", s.End)
+      1058 -    }
+      1059 -    if !strings.Contains(s.Code, "func NewMyStruct") {
+      1060 -      t.Errorf("Code should contain func NewMyStruct, got %q", s.Code)
+      1061 -    }
+      1062 -    if strings.Contains(s.Code, "func (m *MyStruct)") {
+      1063 -      t.Errorf("Code should not extend beyond end line, got %q", s.Code)
+      1064 -    }
+      1065 -  })
+      1066 -}
+      1067 -
+      1068 -func TestSnippetHandler_MultipleSnippets(t *testing.T) {
+      1069 -  withCwd(t, "testdata", func() {
+      1070 -    srv := httptest.NewServer(newHandler(false))
+      1071 -    defer srv.Close()
+      1072 -
+      1073 -    resp, err := http.Get(srv.URL + "/snippets/overloaded")
+      1074 -    if err != nil {
+      1075 -      t.Fatal(err)
+      1076 -    }
+      1077 -    defer resp.Body.Close()
+      1078 -
+      1079 -    if resp.StatusCode != http.StatusOK {
+      1080 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1081 -    }
+      1082 -
+      1083 -    var snippets []Snippet
+      1084 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1085 -      t.Fatalf("decode: %v", err)
+      1086 -    }
+      1087 -    if len(snippets) != 2 {
+      1088 -      t.Fatalf("expected 2 snippets for overloaded, got %d", len(snippets))
+      1089 -    }
+      1090 -    paths := map[string]bool{}
+      1091 -    for _, s := range snippets {
+      1092 -      paths[s.Path] = true
+      1093 -    }
+      1094 -    if !paths["sample.go"] || !paths["other.go"] {
+      1095 -      t.Errorf("expected snippets from sample.go and other.go, got paths: %v", paths)
+      1096 -    }
+      1097 -  })
+      1098 -}
+      1099 -
+      1100 -func TestSnippetHandler_TagNotFound(t *testing.T) {
+      1101 -  withCwd(t, "testdata", func() {
+      1102 -    srv := httptest.NewServer(newHandler(false))
+      1103 -    defer srv.Close()
+      1104 -
+      1105 -    resp, err := http.Get(srv.URL + "/snippets/NonExistent")
+      1106 -    if err != nil {
+      1107 -      t.Fatal(err)
+      1108 -    }
+      1109 -    defer resp.Body.Close()
+      1110 -
+      1111 -    if resp.StatusCode != http.StatusNotFound {
+      1112 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      1113 -    }
+      1114 -  })
+      1115 -}
+      1116 -
+      1117 -func TestSnippetHandler_TagsFileNotFound(t *testing.T) {
+      1118 -  withCwd(t, t.TempDir(), func() {
+      1119 -    srv := httptest.NewServer(newHandler(false))
+      1120 -    defer srv.Close()
+      1121 -
+      1122 -    resp, err := http.Get(srv.URL + "/snippets/anything")
+      1123 -    if err != nil {
+      1124 -      t.Fatal(err)
+      1125 -    }
+      1126 -    defer resp.Body.Close()
+      1127 -
+      1128 -    if resp.StatusCode != http.StatusNotFound {
+      1129 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      1130 -    }
+      1131 -  })
+      1132 -}
+      1133 -
+      1134 -func TestSnippetHandler_ContextQueryParam(t *testing.T) {
+      1135 -  withCwd(t, "testdata", func() {
+      1136 -    srv := httptest.NewServer(newHandler(false))
+      1137 -    defer srv.Close()
+      1138 -
+      1139 -    resp, err := http.Get(srv.URL + "/snippets/SubFunc?context=sub")
+      1140 -    if err != nil {
+      1141 -      t.Fatal(err)
+      1142 -    }
+      1143 -    defer resp.Body.Close()
+      1144 -
+      1145 -    if resp.StatusCode != http.StatusOK {
+      1146 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1147 -    }
+      1148 -
+      1149 -    var snippets []Snippet
+      1150 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1151 -      t.Fatalf("decode: %v", err)
+      1152 -    }
+      1153 -    if len(snippets) != 1 {
+      1154 -      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1155 -    }
+      1156 -    if snippets[0].Name != "SubFunc" {
+      1157 -      t.Errorf("Name: got %q, want SubFunc", snippets[0].Name)
+      1158 -    }
+      1159 -    if !strings.Contains(snippets[0].Code, "func SubFunc") {
+      1160 -      t.Errorf("Code should contain func SubFunc, got %q", snippets[0].Code)
+      1161 -    }
+      1162 -  })
+      1163 -}
+      1164 -
+      1165 -func TestSnippetHandler_LineOnlyTag(t *testing.T) {
+      1166 -  // readtags silently skips line-number addressed tags; only loadTagsFile handles them.
+      1167 -  if _, err := exec.LookPath("readtags"); err == nil {
+      1168 -    t.Skip("readtags does not return line-number addressed tags")
+      1169 -  }
+      1170 -  withCwd(t, "testdata", func() {
+      1171 -    srv := httptest.NewServer(newHandler(false))
+      1172 -    defer srv.Close()
+      1173 -
+      1174 -    resp, err := http.Get(srv.URL + "/snippets/lineonly")
+      1175 -    if err != nil {
+      1176 -      t.Fatal(err)
+      1177 -    }
+      1178 -    defer resp.Body.Close()
+      1179 -
+      1180 -    if resp.StatusCode != http.StatusOK {
+      1181 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1182 -    }
+      1183 -
+      1184 -    var snippets []Snippet
+      1185 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1186 -      t.Fatalf("decode: %v", err)
+      1187 -    }
+      1188 -    if len(snippets) != 1 {
+      1189 -      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1190 -    }
+      1191 -    if snippets[0].Start != 42 {
+      1192 -      t.Errorf("Start: got %d, want 42", snippets[0].Start)
+      1193 -    }
+      1194 -    // lineonly tag has no end field: End must be 0 and Code must be a single line
+      1195 -    if snippets[0].End != 0 {
+      1196 -      t.Errorf("End: got %d, want 0", snippets[0].End)
+      1197 -    }
+      1198 -    if !strings.Contains(snippets[0].Code, "var lineonly") {
+      1199 -      t.Errorf("Code should contain var lineonly, got %q", snippets[0].Code)
+      1200 -    }
+      1201 -    if strings.Contains(snippets[0].Code, "\n") {
+      1202 -      t.Errorf("Code should be a single line when end is unknown, got %q", snippets[0].Code)
+      1203 -    }
+      1204 -  })
+      1205 -}
+      1206 -
+      1207 -func TestSnippetHandler_CodeBoundaries(t *testing.T) {
+      1208 -  withCwd(t, "testdata", func() {
+      1209 -    srv := httptest.NewServer(newHandler(false))
+      1210 -    defer srv.Close()
+      1211 -
+      1212 -    resp, err := http.Get(srv.URL + "/snippets/Run")
+      1213 -    if err != nil {
+      1214 -      t.Fatal(err)
+      1215 -    }
+      1216 -    defer resp.Body.Close()
+      1217 -
+      1218 -    var snippets []Snippet
+      1219 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1220 -      t.Fatalf("decode: %v", err)
+      1221 -    }
+      1222 -    if len(snippets) != 1 {
+      1223 -      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1224 -    }
+      1225 -    s := snippets[0]
+      1226 -    if s.Start != 17 || s.End != 22 {
+      1227 -      t.Errorf("Start/End: got %d/%d, want 17/22", s.Start, s.End)
+      1228 -    }
+      1229 -    // Must include the function body
+      1230 -    if !strings.Contains(s.Code, "func (m *MyStruct) Run()") {
+      1231 -      t.Errorf("Code missing function signature, got %q", s.Code)
+      1232 -    }
+      1233 -    // Must not include helperFunc which starts at line 24
+      1234 -    if strings.Contains(s.Code, "func helperFunc") {
+      1235 -      t.Errorf("Code should not extend past end line, got %q", s.Code)
+      1236 -    }
+      1237 -  })
+      1238 -}
+      1239 -
+      1240 -func TestSnippetHandler_NoEndField_ReturnsZeroEndAndSingleLine(t *testing.T) {
+      1241 -  // noendVar tag in testdata/tags has no "end" field.
+      1242 -  withCwd(t, "testdata", func() {
+      1243 -    srv := httptest.NewServer(newHandler(false))
+      1244 -    defer srv.Close()
+      1245 -
+      1246 -    resp, err := http.Get(srv.URL + "/snippets/noendVar")
+      1247 -    if err != nil {
+      1248 -      t.Fatal(err)
+      1249 -    }
+      1250 -    defer resp.Body.Close()
+      1251 -
+      1252 -    if resp.StatusCode != http.StatusOK {
+      1253 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1254 -    }
+      1255 -
+      1256 -    var snippets []Snippet
+      1257 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1258 -      t.Fatalf("decode: %v", err)
+      1259 -    }
+      1260 -    if len(snippets) != 1 {
+      1261 -      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1262 -    }
+      1263 -    s := snippets[0]
+      1264 -    if s.End != 0 {
+      1265 -      t.Errorf("End: got %d, want 0 when end field is absent", s.End)
+      1266 -    }
+      1267 -    if strings.Contains(s.Code, "\n") {
+      1268 -      t.Errorf("Code should be a single line when end is unknown, got %q", s.Code)
+      1269 -    }
+      1270 -    if !strings.Contains(s.Code, "noendVar") {
+      1271 -      t.Errorf("Code should contain noendVar, got %q", s.Code)
+      1272 -    }
+      1273 -  })
+      1274 -}
+      1275 -
+      1276 -func TestLinesHandler_NoEndField_ReturnsZeroEnd(t *testing.T) {
+      1277 -  // noendVar tag in testdata/tags has no "end" field.
+      1278 -  withCwd(t, "testdata", func() {
+      1279 -    srv := httptest.NewServer(newHandler(false))
+      1280 -    defer srv.Close()
+      1281 -
+      1282 -    resp, err := http.Get(srv.URL + "/lines/noendVar")
+      1283 -    if err != nil {
+      1284 -      t.Fatal(err)
+      1285 -    }
+      1286 -    defer resp.Body.Close()
+      1287 -
+      1288 -    if resp.StatusCode != http.StatusOK {
+      1289 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1290 -    }
+      1291 -
+      1292 -    var ranges []LineRange
+      1293 -    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1294 -      t.Fatalf("decode: %v", err)
+      1295 -    }
+      1296 -    if len(ranges) != 1 {
+      1297 -      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1298 -    }
+      1299 -    if ranges[0].End != 0 {
+      1300 -      t.Errorf("End: got %d, want 0 when end field is absent", ranges[0].End)
+      1301 -    }
+      1302 -  })
+      1303 -}
+      1304 -
+      1305 -// ---- lineRangeForTag tests ----
+      1306 -
+      1307 -func TestLineRangeForTag_WithLineAndEndField(t *testing.T) {
+      1308 -  src := "package p\n\nfunc Greet() {\n\treturn\n}\n\nvar x = 1\n"
+      1309 -  path := writeTemp(t, src)
+      1310 -
+      1311 -  tag := Tag{
+      1312 -    Name:  "Greet",
+      1313 -    Path:  path,
+      1314 -    Line:  3,
+      1315 -    Extra: map[string]string{"end": "5"},
+      1316 -  }
+      1317 -  lr, err := lineRangeForTag(context.Background(), tag, ".", false)
+      1318 -  if err != nil {
+      1319 -    t.Fatal(err)
+      1320 -  }
+      1321 -  if lr.Start != 3 {
+      1322 -    t.Errorf("Start: got %d, want 3", lr.Start)
+      1323 -  }
+      1324 -  if lr.End != 5 {
+      1325 -    t.Errorf("End: got %d, want 5", lr.End)
+      1326 -  }
+      1327 -  if lr.Name != "Greet" {
+      1328 -    t.Errorf("Name: got %q, want Greet", lr.Name)
+      1329 -  }
+      1330 -  if lr.Path != path {
+      1331 -    t.Errorf("Path: got %q, want %q", lr.Path, path)
+      1332 -  }
+      1333 -}
+      1334 -
+      1335 -func TestLineRangeForTag_WithPatternAndEndField(t *testing.T) {
+      1336 -  src := "package p\n\nfunc Hello() {\n}\n\nvar y = 2\n"
+      1337 -  path := writeTemp(t, src)
+      1338 -
+      1339 -  tag := Tag{
+      1340 -    Name:    "Hello",
+      1341 -    Path:    path,
+      1342 -    Pattern: "^func Hello() {$",
+      1343 -    Extra:   map[string]string{"end": "4"},
+      1344 -  }
+      1345 -  lr, err := lineRangeForTag(context.Background(), tag, ".", false)
+      1346 -  if err != nil {
+      1347 -    t.Fatal(err)
+      1348 -  }
+      1349 -  if lr.Start != 3 {
+      1350 -    t.Errorf("Start: got %d, want 3", lr.Start)
+      1351 -  }
+      1352 -  if lr.End != 4 {
+      1353 -    t.Errorf("End: got %d, want 4", lr.End)
+      1354 -  }
+      1355 -}
+      1356 -
+      1357 -func TestLineRangeForTag_WithoutEndField_ReturnsZeroEnd(t *testing.T) {
+      1358 -  src := "line1\nfunc Foo() {\n\treturn\n}\n"
+      1359 -  path := writeTemp(t, src)
+      1360 -
+      1361 -  tag := Tag{
+      1362 -    Name:  "Foo",
+      1363 -    Path:  path,
+      1364 -    Line:  2,
+      1365 -    Extra: map[string]string{},
+      1366 -  }
+      1367 -  lr, err := lineRangeForTag(context.Background(), tag, ".", false)
+      1368 -  if err != nil {
+      1369 -    t.Fatal(err)
+      1370 -  }
+      1371 -  if lr.Start != 2 {
+      1372 -    t.Errorf("Start: got %d, want 2", lr.Start)
+      1373 -  }
+      1374 -  // End must be 0 when Extra["end"] is absent and tree-sitter is disabled
+      1375 -  if lr.End != 0 {
+      1376 -    t.Errorf("End: got %d, want 0", lr.End)
+      1377 -  }
+      1378 -}
+      1379 -
+      1380 -func TestLineRangeForTag_FileNotFound(t *testing.T) {
+      1381 -  tag := Tag{
+      1382 -    Name:    "Foo",
+      1383 -    Path:    "/nonexistent/path/src.go",
+      1384 -    Pattern: "^func Foo() {$",
+      1385 -    Extra:   map[string]string{},
+      1386 -  }
+      1387 -  _, err := lineRangeForTag(context.Background(), tag, ".", false)
+      1388 -  if err == nil {
+      1389 -    t.Fatal("expected error for missing source file")
+      1390 -  }
+      1391 -}
+      1392 -
+      1393 -func TestLineRangeForTag_NoCodeField(t *testing.T) {
+      1394 -  src := "package p\n\nfunc Bar() {\n\treturn\n}\n"
+      1395 -  path := writeTemp(t, src)
+      1396 -
+      1397 -  tag := Tag{
+      1398 -    Name:  "Bar",
+      1399 -    Path:  path,
+      1400 -    Line:  3,
+      1401 -    Extra: map[string]string{"end": "5"},
+      1402 -  }
+      1403 -  lr, err := lineRangeForTag(context.Background(), tag, ".", false)
+      1404 -  if err != nil {
+      1405 -    t.Fatal(err)
+      1406 -  }
+      1407 -  // LineRange must not contain a Code field
+      1408 -  b, _ := json.Marshal(lr)
+      1409 -  var m map[string]any
+      1410 -  json.Unmarshal(b, &m)
+      1411 -  if _, ok := m["code"]; ok {
+      1412 -    t.Error("LineRange JSON must not contain a 'code' field")
+      1413 -  }
+      1414 -}
+      1415 -
+      1416 -// ---- GET /lines/{name} handler tests ----
+      1417 -
+      1418 -func TestLinesHandler_ReturnsJSON(t *testing.T) {
+      1419 -  withCwd(t, "testdata", func() {
+      1420 -    srv := httptest.NewServer(newHandler(false))
+      1421 -    defer srv.Close()
+      1422 -
+      1423 -    resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+      1424 -    if err != nil {
+      1425 -      t.Fatal(err)
+      1426 -    }
+      1427 -    defer resp.Body.Close()
+      1428 -
+      1429 -    if resp.StatusCode != http.StatusOK {
+      1430 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1431 -    }
+      1432 -    if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+      1433 -      t.Errorf("Content-Type: got %q, want application/json", ct)
+      1434 -    }
+      1435 -
+      1436 -    var ranges []LineRange
+      1437 -    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1438 -      t.Fatalf("decode: %v", err)
+      1439 -    }
+      1440 -    if len(ranges) != 1 {
+      1441 -      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1442 -    }
+      1443 -  })
+      1444 -}
+      1445 -
+      1446 -func TestLinesHandler_LineRangeFields(t *testing.T) {
+      1447 -  withCwd(t, "testdata", func() {
+      1448 -    srv := httptest.NewServer(newHandler(false))
+      1449 -    defer srv.Close()
+      1450 -
+      1451 -    resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+      1452 -    if err != nil {
+      1453 -      t.Fatal(err)
+      1454 -    }
+      1455 -    defer resp.Body.Close()
+      1456 -
+      1457 -    var ranges []LineRange
+      1458 -    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1459 -      t.Fatalf("decode: %v", err)
+      1460 -    }
+      1461 -    lr := ranges[0]
+      1462 -
+      1463 -    if lr.Name != "NewMyStruct" {
+      1464 -      t.Errorf("Name: got %q, want NewMyStruct", lr.Name)
+      1465 -    }
+      1466 -    if lr.Start != 11 {
+      1467 -      t.Errorf("Start: got %d, want 11", lr.Start)
+      1468 -    }
+      1469 -    if lr.End != 13 {
+      1470 -      t.Errorf("End: got %d, want 13", lr.End)
+      1471 -    }
+      1472 -  })
+      1473 -}
+      1474 -
+      1475 -func TestLinesHandler_NoCodeField(t *testing.T) {
+      1476 -  withCwd(t, "testdata", func() {
+      1477 -    srv := httptest.NewServer(newHandler(false))
+      1478 -    defer srv.Close()
+      1479 -
+      1480 -    resp, err := http.Get(srv.URL + "/lines/NewMyStruct")
+      1481 -    if err != nil {
+      1482 -      t.Fatal(err)
+      1483 -    }
+      1484 -    defer resp.Body.Close()
+      1485 -
+      1486 -    var raw []map[string]any
+      1487 -    if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+      1488 -      t.Fatalf("decode: %v", err)
+      1489 -    }
+      1490 -    if _, ok := raw[0]["code"]; ok {
+      1491 -      t.Error("response must not contain a 'code' field")
+      1492 -    }
+      1493 -  })
+      1494 -}
+      1495 -
+      1496 -func TestLinesHandler_MultipleRanges(t *testing.T) {
+      1497 -  withCwd(t, "testdata", func() {
+      1498 -    srv := httptest.NewServer(newHandler(false))
+      1499 -    defer srv.Close()
+      1500 -
+      1501 -    resp, err := http.Get(srv.URL + "/lines/overloaded")
+      1502 -    if err != nil {
+      1503 -      t.Fatal(err)
+      1504 -    }
+      1505 -    defer resp.Body.Close()
+      1506 -
+      1507 -    if resp.StatusCode != http.StatusOK {
+      1508 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1509 -    }
+      1510 -
+      1511 -    var ranges []LineRange
+      1512 -    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1513 -      t.Fatalf("decode: %v", err)
+      1514 -    }
+      1515 -    if len(ranges) != 2 {
+      1516 -      t.Fatalf("expected 2 entries for overloaded, got %d", len(ranges))
+      1517 -    }
+      1518 -    paths := map[string]bool{}
+      1519 -    for _, lr := range ranges {
+      1520 -      paths[lr.Path] = true
+      1521 -    }
+      1522 -    if !paths["sample.go"] || !paths["other.go"] {
+      1523 -      t.Errorf("expected entries from sample.go and other.go, got: %v", paths)
+      1524 -    }
+      1525 -  })
+      1526 -}
+      1527 -
+      1528 -func TestLinesHandler_TagNotFound(t *testing.T) {
+      1529 -  withCwd(t, "testdata", func() {
+      1530 -    srv := httptest.NewServer(newHandler(false))
+      1531 -    defer srv.Close()
+      1532 -
+      1533 -    resp, err := http.Get(srv.URL + "/lines/NonExistent")
+      1534 -    if err != nil {
+      1535 -      t.Fatal(err)
+      1536 -    }
+      1537 -    defer resp.Body.Close()
+      1538 -
+      1539 -    if resp.StatusCode != http.StatusNotFound {
+      1540 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      1541 -    }
+      1542 -  })
+      1543 -}
+      1544 -
+      1545 -func TestLinesHandler_TagsFileNotFound(t *testing.T) {
+      1546 -  withCwd(t, t.TempDir(), func() {
+      1547 -    srv := httptest.NewServer(newHandler(false))
+      1548 -    defer srv.Close()
+      1549 -
+      1550 -    resp, err := http.Get(srv.URL + "/lines/anything")
+      1551 -    if err != nil {
+      1552 -      t.Fatal(err)
+      1553 -    }
+      1554 -    defer resp.Body.Close()
+      1555 -
+      1556 -    if resp.StatusCode != http.StatusNotFound {
+      1557 -      t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNotFound)
+      1558 -    }
+      1559 -  })
+      1560 -}
+      1561 -
+      1562 -func TestLinesHandler_ContextQueryParam(t *testing.T) {
+      1563 -  withCwd(t, "testdata", func() {
+      1564 -    srv := httptest.NewServer(newHandler(false))
+      1565 -    defer srv.Close()
+      1566 -
+      1567 -    resp, err := http.Get(srv.URL + "/lines/SubFunc?context=sub")
+      1568 -    if err != nil {
+      1569 -      t.Fatal(err)
+      1570 -    }
+      1571 -    defer resp.Body.Close()
+      1572 -
+      1573 -    if resp.StatusCode != http.StatusOK {
+      1574 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1575 -    }
+      1576 -
+      1577 -    var ranges []LineRange
+      1578 -    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1579 -      t.Fatalf("decode: %v", err)
+      1580 -    }
+      1581 -    if len(ranges) != 1 {
+      1582 -      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1583 -    }
+      1584 -    if ranges[0].Start != 3 || ranges[0].End != 4 {
+      1585 -      t.Errorf("Start/End: got %d/%d, want 3/4", ranges[0].Start, ranges[0].End)
+      1586 -    }
+      1587 -  })
+      1588 -}
+      1589 -
+      1590 -// ---- context= query parameter edge-case tests ----
+      1591 -
+      1592 -// TestTagsFileForContext_Slashes verifies that context values with slashes are
+      1593 -// joined correctly so there is no double-separator in the resulting path.
+      1594 -func TestTagsFileForContext_Slashes(t *testing.T) {
+      1595 -  got := tagsFileForContext("a/b")
+      1596 -  want := filepath.Join(".", "a", "b", "tags")
+      1597 -  if got != want {
+      1598 -    t.Errorf("got %q, want %q", got, want)
+      1599 -  }
+      1600 -}
+      1601 -
+      1602 -// TestTagsFileForContext_AbsolutePath verifies that an absolute path context is used
+      1603 -// directly without prepending ".".
+      1604 -func TestTagsFileForContext_AbsolutePath(t *testing.T) {
+      1605 -  got := tagsFileForContext("/home/user/myproject")
+      1606 -  want := "/home/user/myproject/tags"
+      1607 -  if got != want {
+      1608 -    t.Errorf("got %q, want %q", got, want)
+      1609 -  }
+      1610 -}
+      1611 -
+      1612 -// ---- resolveTagsPath tests ----
+      1613 -
+      1614 -func TestResolveTagsPath_TagsParamTakesPrecedence(t *testing.T) {
+      1615 -  got := resolveTagsPath("some/context", "/explicit/path/tags")
+      1616 -  want := "/explicit/path/tags"
+      1617 -  if got != want {
+      1618 -    t.Errorf("got %q, want %q", got, want)
+      1619 -  }
+      1620 -}
+      1621 -
+      1622 -func TestResolveTagsPath_FallsBackToContext(t *testing.T) {
+      1623 -  got := resolveTagsPath("sub/project", "")
+      1624 -  want := filepath.Join(".", "sub", "project", "tags")
+      1625 -  if got != want {
+      1626 -    t.Errorf("got %q, want %q", got, want)
+      1627 -  }
+      1628 -}
+      1629 -
+      1630 -func TestResolveTagsPath_BothEmpty(t *testing.T) {
+      1631 -  got := resolveTagsPath("", "")
+      1632 -  want := filepath.Join(".", "tags")
+      1633 -  if got != want {
+      1634 -    t.Errorf("got %q, want %q", got, want)
+      1635 -  }
+      1636 -}
+      1637 -
+      1638 -func TestResolveTagsPath_RelativeTagsParam(t *testing.T) {
+      1639 -  got := resolveTagsPath("", "custom/tags")
+      1640 -  if got != "custom/tags" {
+      1641 -    t.Errorf("got %q, want %q", got, "custom/tags")
+      1642 -  }
+      1643 -}
+      1644 -
+      1645 -// ---- tags= query parameter handler tests ----
+      1646 -
+      1647 -// TestHandler_TagsQueryParam_OverridesDefault verifies that tags= pointing to
+      1648 -// testdata/sub/tags returns SubFunc even when cwd is testdata (default tags file
+      1649 -// does not contain SubFunc).
+      1650 -func TestHandler_TagsQueryParam_OverridesDefault(t *testing.T) {
+      1651 -  withCwd(t, "testdata", func() {
+      1652 -    srv := httptest.NewServer(newHandler(false))
+      1653 -    defer srv.Close()
+      1654 -
+      1655 -    absTagsPath, err := filepath.Abs("sub/tags")
+      1656 -    if err != nil {
+      1657 -      t.Fatal(err)
+      1658 -    }
+      1659 -
+      1660 -    resp, err := http.Get(srv.URL + "/tags/SubFunc?tags=" + absTagsPath)
+      1661 -    if err != nil {
+      1662 -      t.Fatal(err)
+      1663 -    }
+      1664 -    defer resp.Body.Close()
+      1665 -
+      1666 -    if resp.StatusCode != http.StatusOK {
+      1667 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1668 -    }
+      1669 -    var tags []map[string]interface{}
+      1670 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      1671 -      t.Fatalf("decode: %v", err)
+      1672 -    }
+      1673 -    if len(tags) != 1 || tags[0]["name"] != "SubFunc" {
+      1674 -      t.Errorf("expected SubFunc tag, got %v", tags)
+      1675 -    }
+      1676 -  })
+      1677 -}
+      1678 -
+      1679 -// TestHandler_TagsQueryParam_ListAll verifies that GET /tags?tags= returns tags
+      1680 -// from the explicitly specified tags file.
+      1681 -func TestHandler_TagsQueryParam_ListAll(t *testing.T) {
+      1682 -  withCwd(t, "testdata", func() {
+      1683 -    srv := httptest.NewServer(newHandler(false))
+      1684 -    defer srv.Close()
+      1685 -
+      1686 -    absTagsPath, err := filepath.Abs("sub/tags")
+      1687 -    if err != nil {
+      1688 -      t.Fatal(err)
+      1689 -    }
+      1690 -
+      1691 -    resp, err := http.Get(srv.URL + "/tags?tags=" + absTagsPath)
+      1692 -    if err != nil {
+      1693 -      t.Fatal(err)
+      1694 -    }
+      1695 -    defer resp.Body.Close()
+      1696 -
+      1697 -    if resp.StatusCode != http.StatusOK {
+      1698 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1699 -    }
+      1700 -    var tags []map[string]interface{}
+      1701 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      1702 -      t.Fatalf("decode: %v", err)
+      1703 -    }
+      1704 -    names := map[string]bool{}
+      1705 -    for _, tag := range tags {
+      1706 -      if n, ok := tag["name"].(string); ok {
+      1707 -        names[n] = true
+      1708 -      }
+      1709 -    }
+      1710 -    if !names["SubFunc"] {
+      1711 -      t.Errorf("expected SubFunc in tags from sub/tags, got names: %v", names)
+      1712 -    }
+      1713 -  })
+      1714 -}
+      1715 -
+      1716 -// TestHandler_TagsQueryParam_Snippets verifies that GET /snippets/{name}?tags=
+      1717 -// returns a snippet using the explicitly specified tags file.
+      1718 -func TestHandler_TagsQueryParam_Snippets(t *testing.T) {
+      1719 -  withCwd(t, "testdata", func() {
+      1720 -    srv := httptest.NewServer(newHandler(false))
+      1721 -    defer srv.Close()
+      1722 -
+      1723 -    absTagsPath, err := filepath.Abs("sub/tags")
+      1724 -    if err != nil {
+      1725 -      t.Fatal(err)
+      1726 -    }
+      1727 -
+      1728 -    resp, err := http.Get(srv.URL + "/snippets/SubFunc?tags=" + absTagsPath)
+      1729 -    if err != nil {
+      1730 -      t.Fatal(err)
+      1731 -    }
+      1732 -    defer resp.Body.Close()
+      1733 -
+      1734 -    if resp.StatusCode != http.StatusOK {
+      1735 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1736 -    }
+      1737 -    var snippets []Snippet
+      1738 -    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1739 -      t.Fatalf("decode: %v", err)
+      1740 -    }
+      1741 -    if len(snippets) != 1 {
+      1742 -      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1743 -    }
+      1744 -    if snippets[0].Name != "SubFunc" {
+      1745 -      t.Errorf("Name: got %q, want SubFunc", snippets[0].Name)
+      1746 -    }
+      1747 -    if !strings.Contains(snippets[0].Code, "func SubFunc") {
+      1748 -      t.Errorf("Code should contain func SubFunc, got %q", snippets[0].Code)
+      1749 -    }
+      1750 -  })
+      1751 -}
+      1752 -
+      1753 -// TestHandler_TagsQueryParam_Lines verifies that GET /lines/{name}?tags= returns
+      1754 -// line ranges using the explicitly specified tags file.
+      1755 -func TestHandler_TagsQueryParam_Lines(t *testing.T) {
+      1756 -  withCwd(t, "testdata", func() {
+      1757 -    srv := httptest.NewServer(newHandler(false))
+      1758 -    defer srv.Close()
+      1759 -
+      1760 -    absTagsPath, err := filepath.Abs("sub/tags")
+      1761 -    if err != nil {
+      1762 -      t.Fatal(err)
+      1763 -    }
+      1764 -
+      1765 -    resp, err := http.Get(srv.URL + "/lines/SubFunc?tags=" + absTagsPath)
+      1766 -    if err != nil {
+      1767 -      t.Fatal(err)
+      1768 -    }
+      1769 -    defer resp.Body.Close()
+      1770 -
+      1771 -    if resp.StatusCode != http.StatusOK {
+      1772 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1773 -    }
+      1774 -    var ranges []LineRange
+      1775 -    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1776 -      t.Fatalf("decode: %v", err)
+      1777 -    }
+      1778 -    if len(ranges) != 1 {
+      1779 -      t.Fatalf("expected 1 entry, got %d", len(ranges))
+      1780 -    }
+      1781 -    if ranges[0].Name != "SubFunc" {
+      1782 -      t.Errorf("Name: got %q, want SubFunc", ranges[0].Name)
+      1783 -    }
+      1784 -  })
+      1785 -}
+      1786 -
+      1787 -// TestHandler_TagsQueryParam_NotFound verifies that tags= pointing to a
+      1788 -// nonexistent file returns 404.
+      1789 -func TestHandler_TagsQueryParam_NotFound(t *testing.T) {
+      1790 -  endpoints := []string{
+      1791 -    "/tags",
+      1792 -    "/tags/SomeFunc",
+      1793 -    "/snippets/SomeFunc",
+      1794 -    "/lines/SomeFunc",
+      1795 -  }
+      1796 -  srv := httptest.NewServer(newHandler(false))
+      1797 -  defer srv.Close()
+      1798 -
+      1799 -  for _, ep := range endpoints {
+      1800 -    resp, err := http.Get(srv.URL + ep + "?tags=/nonexistent/path/tags")
+      1801 -    if err != nil {
+      1802 -      t.Fatalf("%s: %v", ep, err)
+      1803 -    }
+      1804 -    resp.Body.Close()
+      1805 -    if resp.StatusCode != http.StatusNotFound {
+      1806 -      t.Errorf("%s: status got %d, want %d", ep, resp.StatusCode, http.StatusNotFound)
+      1807 -    }
+      1808 -  }
+      1809 -}
+      1810 -
+      1811 -// TestHandler_ContextNotFound checks that all four endpoints return 404 when
+      1812 -// the context directory (and therefore the tags file) does not exist.
+      1813 -func TestHandler_ContextNotFound(t *testing.T) {
+      1814 -  endpoints := []string{
+      1815 -    "/tags",
+      1816 -    "/tags/SomeFunc",
+      1817 -    "/snippets/SomeFunc",
+      1818 -    "/lines/SomeFunc",
+      1819 -  }
+      1820 -  withCwd(t, "testdata", func() {
+      1821 -    srv := httptest.NewServer(newHandler(false))
+      1822 -    defer srv.Close()
+      1823 -
+      1824 -    for _, ep := range endpoints {
+      1825 -      url := srv.URL + ep + "?context=nonexistent"
+      1826 -      resp, err := http.Get(url)
+      1827 -      if err != nil {
+      1828 -        t.Fatalf("%s: %v", ep, err)
+      1829 -      }
+      1830 -      resp.Body.Close()
+      1831 -      if resp.StatusCode != http.StatusNotFound {
+      1832 -        t.Errorf("%s: status got %d, want %d", ep, resp.StatusCode, http.StatusNotFound)
+      1833 -      }
+      1834 -    }
+      1835 -  })
+      1836 -}
+      1837 -
+      1838 -// TestHandler_ContextEmpty verifies that omitting context= (empty string)
+      1839 -// falls back to the default tags file in the current directory.
+      1840 -func TestHandler_ContextEmpty(t *testing.T) {
+      1841 -  withCwd(t, "testdata", func() {
+      1842 -    srv := httptest.NewServer(newHandler(false))
+      1843 -    defer srv.Close()
+      1844 -
+      1845 -    // /tags without context= should return tags from ./tags (the default).
+      1846 -    resp, err := http.Get(srv.URL + "/tags")
+      1847 -    if err != nil {
+      1848 -      t.Fatal(err)
+      1849 -    }
+      1850 -    defer resp.Body.Close()
+      1851 -
+      1852 -    if resp.StatusCode != http.StatusOK {
+      1853 -      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1854 -    }
+      1855 -    var tags []map[string]interface{}
+      1856 -    if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      1857 -      t.Fatalf("decode: %v", err)
+      1858 -    }
+      1859 -    if len(tags) == 0 {
+      1860 -      t.Error("expected at least one tag from default tags file")
+      1861 -    }
+      1862 -  })
+      1863 -}
+      1864 -
+      1865 -// TestHandler_ContextIsolation verifies that two different context values
+      1866 -// return results from their respective tags files and do not bleed into
+      1867 -// each other. SubFunc only exists in the "sub" context, not in the default.
+      1868 -func TestHandler_ContextIsolation(t *testing.T) {
+      1869 -  withCwd(t, "testdata", func() {
+      1870 -    srv := httptest.NewServer(newHandler(false))
+      1871 -    defer srv.Close()
+      1872 -
+      1873 -    // SubFunc should be found with ?context=sub
+      1874 -    resp, err := http.Get(srv.URL + "/tags/SubFunc?context=sub")
+      1875 -    if err != nil {
+      1876 -      t.Fatal(err)
+      1877 -    }
+      1878 -    defer resp.Body.Close()
+      1879 -    if resp.StatusCode != http.StatusOK {
+      1880 -      t.Fatalf("context=sub: status got %d, want %d", resp.StatusCode, http.StatusOK)
+      1881 -    }
+      1882 -
+      1883 -    // SubFunc should NOT be found without context= (default tags file).
+      1884 -    // The server returns 404 when the tag does not exist.
+      1885 -    resp2, err := http.Get(srv.URL + "/tags/SubFunc")
+      1886 -    if err != nil {
+      1887 -      t.Fatal(err)
+      1888 -    }
+      1889 -    defer resp2.Body.Close()
+      1890 -    if resp2.StatusCode != http.StatusNotFound {
+      1891 -      t.Errorf("SubFunc should not exist in default context: status got %d, want %d", resp2.StatusCode, http.StatusNotFound)
+      1892 -    }
+      1893 -  })
+      1894 -}
+      1895 -
+      1896 -// ---- /pipe endpoint tests ----
+      1897 -
+      1898 -// TestPipe_InitiallyEmpty verifies that GET /pipe/status reports empty before any POST.
+      1899 -func TestPipe_InitiallyEmpty(t *testing.T) {
+      1900 -  // Reset global buffer before the test.
+      1901 -  pipe.mu.Lock()
+      1902 -  pipe.data = nil
+      1903 -  pipe.mu.Unlock()
+      1904 -
+      1905 -  srv := httptest.NewServer(newHandler(false))
+      1906 -  defer srv.Close()
+      1907 -
+      1908 -  resp, err := http.Get(srv.URL + "/pipe/status")
+      1909 -  if err != nil {
+      1910 -    t.Fatal(err)
+      1911 -  }
+      1912 -  defer resp.Body.Close()
+      1913 -
+      1914 -  if resp.StatusCode != http.StatusOK {
+      1915 -    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1916 -  }
+      1917 -  var got map[string]interface{}
+      1918 -  if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+      1919 -    t.Fatalf("decode: %v", err)
+      1920 -  }
+      1921 -  if got["empty"] != true {
+      1922 -    t.Errorf("empty: got %v, want true", got["empty"])
+      1923 -  }
+      1924 -}
+      1925 -
+      1926 -// TestPipe_PostAndGet verifies that POST /pipe stores content and GET /pipe retrieves it.
+      1927 -func TestPipe_PostAndGet(t *testing.T) {
+      1928 -  pipe.mu.Lock()
+      1929 -  pipe.data = nil
+      1930 -  pipe.mu.Unlock()
+      1931 -
+      1932 -  srv := httptest.NewServer(newHandler(false))
+      1933 -  defer srv.Close()
+      1934 -
+      1935 -  content := "hello, pipe!"
+      1936 -
+      1937 -  // POST content into the pipe.
+      1938 -  resp, err := http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader(content))
+      1939 -  if err != nil {
+      1940 -    t.Fatal(err)
+      1941 -  }
+      1942 -  defer resp.Body.Close()
+      1943 -  if resp.StatusCode != http.StatusNoContent {
+      1944 -    t.Fatalf("POST status: got %d, want %d", resp.StatusCode, http.StatusNoContent)
+      1945 -  }
+      1946 -
+      1947 -  // GET the content back.
+      1948 -  resp2, err := http.Get(srv.URL + "/pipe")
+      1949 -  if err != nil {
+      1950 -    t.Fatal(err)
+      1951 -  }
+      1952 -  defer resp2.Body.Close()
+      1953 -  if resp2.StatusCode != http.StatusOK {
+      1954 -    t.Fatalf("GET status: got %d, want %d", resp2.StatusCode, http.StatusOK)
+      1955 -  }
+      1956 -  if ct := resp2.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+      1957 -    t.Errorf("Content-Type: got %q, want application/json", ct)
+      1958 -  }
+      1959 -  body, err := io.ReadAll(resp2.Body)
+      1960 -  if err != nil {
+      1961 -    t.Fatal(err)
+      1962 -  }
+      1963 -  if string(body) != content {
+      1964 -    t.Errorf("body: got %q, want %q", string(body), content)
+      1965 -  }
+      1966 -}
+      1967 -
+      1968 -// TestPipe_StatusNonEmpty verifies that GET /pipe/status reports non-empty after POST.
+      1969 -func TestPipe_StatusNonEmpty(t *testing.T) {
+      1970 -  pipe.mu.Lock()
+      1971 -  pipe.data = nil
+      1972 -  pipe.mu.Unlock()
+      1973 -
+      1974 -  srv := httptest.NewServer(newHandler(false))
+      1975 -  defer srv.Close()
+      1976 -
+      1977 -  resp, err := http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("data"))
+      1978 -  if err != nil {
+      1979 -    t.Fatal(err)
+      1980 -  }
+      1981 -  resp.Body.Close()
+      1982 -
+      1983 -  resp2, err := http.Get(srv.URL + "/pipe/status")
+      1984 -  if err != nil {
+      1985 -    t.Fatal(err)
+      1986 -  }
+      1987 -  defer resp2.Body.Close()
+      1988 -
+      1989 -  var got map[string]interface{}
+      1990 -  if err := json.NewDecoder(resp2.Body).Decode(&got); err != nil {
+      1991 -    t.Fatalf("decode: %v", err)
+      1992 -  }
+      1993 -  if got["empty"] != false {
+      1994 -    t.Errorf("empty: got %v, want false", got["empty"])
+      1995 -  }
+      1996 -}
+      1997 -
+      1998 -// TestPipe_OverwriteOnPost verifies that a second POST replaces the buffer content.
+      1999 -func TestPipe_OverwriteOnPost(t *testing.T) {
+      2000 -  pipe.mu.Lock()
+      2001 -  pipe.data = nil
+      2002 -  pipe.mu.Unlock()
+      2003 -
+      2004 -  srv := httptest.NewServer(newHandler(false))
+      2005 -  defer srv.Close()
+      2006 -
+      2007 -  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("first"))
+      2008 -  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("second"))
+      2009 -
+      2010 -  resp, err := http.Get(srv.URL + "/pipe")
+      2011 -  if err != nil {
+      2012 -    t.Fatal(err)
+      2013 -  }
+      2014 -  defer resp.Body.Close()
+      2015 -  body, err := io.ReadAll(resp.Body)
+      2016 -  if err != nil {
+      2017 -    t.Fatal(err)
+      2018 -  }
+      2019 -  if string(body) != "second" {
+      2020 -    t.Errorf("body: got %q, want %q", string(body), "second")
+      2021 -  }
+      2022 -}
+      2023 -
+      2024 -// TestPipe_AppendMode verifies that POST /pipe?mode=append appends to the buffer.
+      2025 -func TestPipe_AppendMode(t *testing.T) {
+      2026 -  pipe.mu.Lock()
+      2027 -  pipe.data = nil
+      2028 -  pipe.mu.Unlock()
+      2029 -
+      2030 -  srv := httptest.NewServer(newHandler(false))
+      2031 -  defer srv.Close()
+      2032 -
+      2033 -  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("hello"))
+      2034 -  http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader(", world"))
+      2035 -
+      2036 -  resp, err := http.Get(srv.URL + "/pipe")
+      2037 -  if err != nil {
+      2038 -    t.Fatal(err)
+      2039 -  }
+      2040 -  defer resp.Body.Close()
+      2041 -  body, err := io.ReadAll(resp.Body)
+      2042 -  if err != nil {
+      2043 -    t.Fatal(err)
+      2044 -  }
+      2045 -  if string(body) != "hello, world" {
+      2046 -    t.Errorf("body: got %q, want %q", string(body), "hello, world")
+      2047 -  }
+      2048 -}
+      2049 -
+      2050 -// TestPipe_AppendModeMultiple verifies that multiple appends accumulate correctly.
+      2051 -func TestPipe_AppendModeMultiple(t *testing.T) {
+      2052 -  pipe.mu.Lock()
+      2053 -  pipe.data = nil
+      2054 -  pipe.mu.Unlock()
+      2055 -
+      2056 -  srv := httptest.NewServer(newHandler(false))
+      2057 -  defer srv.Close()
+      2058 -
+      2059 -  for _, chunk := range []string{"a", "b", "c"} {
+      2060 -    http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader(chunk))
+      2061 -  }
+      2062 -
+      2063 -  resp, err := http.Get(srv.URL + "/pipe")
+      2064 -  if err != nil {
+      2065 -    t.Fatal(err)
+      2066 -  }
+      2067 -  defer resp.Body.Close()
+      2068 -  body, err := io.ReadAll(resp.Body)
+      2069 -  if err != nil {
+      2070 -    t.Fatal(err)
+      2071 -  }
+      2072 -  if string(body) != "abc" {
+      2073 -    t.Errorf("body: got %q, want %q", string(body), "abc")
+      2074 -  }
+      2075 -}
+      2076 -
+      2077 -// TestPipe_DefaultModeOverwritesAfterAppend verifies that a plain POST (no mode) replaces
+      2078 -// content even if the buffer was previously built up with appends.
+      2079 -func TestPipe_DefaultModeOverwritesAfterAppend(t *testing.T) {
+      2080 -  pipe.mu.Lock()
+      2081 -  pipe.data = nil
+      2082 -  pipe.mu.Unlock()
+      2083 -
+      2084 -  srv := httptest.NewServer(newHandler(false))
+      2085 -  defer srv.Close()
+      2086 -
+      2087 -  http.Post(srv.URL+"/pipe?mode=append", "text/plain", strings.NewReader("old"))
+      2088 -  http.Post(srv.URL+"/pipe", "text/plain", strings.NewReader("new"))
+      2089 -
+      2090 -  resp, err := http.Get(srv.URL + "/pipe")
+      2091 -  if err != nil {
+      2092 -    t.Fatal(err)
+      2093 -  }
+      2094 -  defer resp.Body.Close()
+      2095 -  body, err := io.ReadAll(resp.Body)
+      2096 -  if err != nil {
+      2097 -    t.Fatal(err)
+      2098 -  }
+      2099 -  if string(body) != "new" {
+      2100 -    t.Errorf("body: got %q, want %q", string(body), "new")
+      2101 -  }
+      2102 -}
+      2103 -
+      2104 -// TestPipe_GetEmptyBuffer verifies that GET /pipe on an empty buffer returns 200 with empty body.
+      2105 -func TestPipe_GetEmptyBuffer(t *testing.T) {
+      2106 -  pipe.mu.Lock()
+      2107 -  pipe.data = nil
+      2108 -  pipe.mu.Unlock()
+      2109 -
+      2110 -  srv := httptest.NewServer(newHandler(false))
+      2111 -  defer srv.Close()
+      2112 -
+      2113 -  resp, err := http.Get(srv.URL + "/pipe")
+      2114 -  if err != nil {
+      2115 -    t.Fatal(err)
+      2116 -  }
+      2117 -  defer resp.Body.Close()
+      2118 -  if resp.StatusCode != http.StatusOK {
+      2119 -    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      2120 -  }
+      2121 -  body, err := io.ReadAll(resp.Body)
+      2122 -  if err != nil {
+      2123 -    t.Fatal(err)
+      2124 -  }
+      2125 -  if len(body) != 0 {
+      2126 -    t.Errorf("expected empty body, got %q", string(body))
+      2127 -  }
+      2128 -}
+      2129 -
+      2130 -// ---- expandTilde tests ----
+      2131 -
+      2132 -func TestExpandTilde_NoTilde(t *testing.T) {
+      2133 -  got, err := expandTilde("/absolute/path")
+      2134 -  if err != nil {
+      2135 -    t.Fatalf("unexpected error: %v", err)
+      2136 -  }
+      2137 -  if got != "/absolute/path" {
+      2138 -    t.Errorf("got %q, want %q", got, "/absolute/path")
+      2139 -  }
+      2140 -}
+      2141 -
+      2142 -func TestExpandTilde_EmptyString(t *testing.T) {
+      2143 -  got, err := expandTilde("")
+      2144 -  if err != nil {
+      2145 -    t.Fatalf("unexpected error: %v", err)
+      2146 -  }
+      2147 -  if got != "" {
+      2148 -    t.Errorf("got %q, want %q", got, "")
+      2149 -  }
+      2150 -}
+      2151 -
+      2152 -func TestExpandTilde_TildeAlone(t *testing.T) {
+      2153 -  u, err := user.Current()
+      2154 -  if err != nil {
+      2155 -    t.Fatalf("user.Current: %v", err)
+      2156 -  }
+      2157 -  got, err := expandTilde("~")
+      2158 -  if err != nil {
+      2159 -    t.Fatalf("unexpected error: %v", err)
+      2160 -  }
+      2161 -  if got != u.HomeDir {
+      2162 -    t.Errorf("got %q, want %q", got, u.HomeDir)
+      2163 -  }
+      2164 -}
+      2165 -
+      2166 -func TestExpandTilde_TildeWithPath(t *testing.T) {
+      2167 -  u, err := user.Current()
+      2168 -  if err != nil {
+      2169 -    t.Fatalf("user.Current: %v", err)
+      2170 -  }
+      2171 -  got, err := expandTilde("~/projects/myrepo")
+      2172 -  if err != nil {
+      2173 -    t.Fatalf("unexpected error: %v", err)
+      2174 -  }
+      2175 -  want := u.HomeDir + "/projects/myrepo"
+      2176 -  if got != want {
+      2177 -    t.Errorf("got %q, want %q", got, want)
+      2178 -  }
+      2179 -}
+      2180 -
+      2181 -func TestExpandTilde_TildeInMiddle(t *testing.T) {
+      2182 -  // ~ not at the start must not be expanded
+      2183 -  got, err := expandTilde("/path/to/~/file")
+      2184 -  if err != nil {
+      2185 -    t.Fatalf("unexpected error: %v", err)
+      2186 -  }
+      2187 -  if got != "/path/to/~/file" {
+      2188 -    t.Errorf("got %q, want %q", got, "/path/to/~/file")
+      2189 -  }
+      2190 -}
+      2191 -
+      2192 -// ---- queryTagsPath / tilde expansion in handlers tests ----
+      2193 -
+      2194 -func TestHandler_ContextTildeExpansion(t *testing.T) {
+      2195 -  u, err := user.Current()
+      2196 -  if err != nil {
+      2197 -    t.Fatalf("user.Current: %v", err)
+      2198 -  }
+      2199 -
+      2200 -  // Create a temporary directory under the real home dir to serve as the context.
+      2201 -  tmpDir, err := os.MkdirTemp(u.HomeDir, "codesnippetd-test-*")
+      2202 -  if err != nil {
+      2203 -    t.Fatalf("MkdirTemp: %v", err)
+      2204 -  }
+      2205 -  defer os.RemoveAll(tmpDir)
+      2206 -
+      2207 -  // Copy testdata/tags into the temp dir so the handler can find it.
+      2208 -  tagsData, err := os.ReadFile(filepath.Join("testdata", "tags"))
+      2209 -  if err != nil {
+      2210 -    t.Fatalf("reading testdata/tags: %v", err)
+      2211 -  }
+      2212 -  if err := os.WriteFile(filepath.Join(tmpDir, "tags"), tagsData, 0o644); err != nil {
+      2213 -    t.Fatalf("writing tags: %v", err)
+      2214 -  }
+      2215 -
+      2216 -  // Also copy the source files that the tags reference.
+      2217 -  for _, name := range []string{"sample.go", "other.go"} {
+      2218 -    src, err := os.ReadFile(filepath.Join("testdata", name))
+      2219 -    if err != nil {
+      2220 -      t.Fatalf("reading %s: %v", name, err)
+      2221 -    }
+      2222 -    if err := os.WriteFile(filepath.Join(tmpDir, name), src, 0o644); err != nil {
+      2223 -      t.Fatalf("writing %s: %v", name, err)
+      2224 -    }
+      2225 -  }
+      2226 -
+      2227 -  // Build a context value using ~ so it starts with the home dir.
+      2228 -  rel, err := filepath.Rel(u.HomeDir, tmpDir)
+      2229 -  if err != nil {
+      2230 -    t.Fatalf("Rel: %v", err)
+      2231 -  }
+      2232 -  tildeContext := "~/" + rel
+      2233 -
+      2234 -  srv := httptest.NewServer(newHandler(false))
+      2235 -  defer srv.Close()
+      2236 -
+      2237 -  resp, err := http.Get(srv.URL + "/tags?context=" + tildeContext)
+      2238 -  if err != nil {
+      2239 -    t.Fatal(err)
+      2240 -  }
+      2241 -  defer resp.Body.Close()
+      2242 -
+      2243 -  if resp.StatusCode != http.StatusOK {
+      2244 -    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      2245 -  }
+      2246 -  var tags []map[string]interface{}
+      2247 -  if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      2248 -    t.Fatalf("decode: %v", err)
+      2249 -  }
+      2250 -  if len(tags) == 0 {
+      2251 -    t.Error("expected non-empty tag list with tilde context")
+      2252 -  }
+      2253 -}
+      2254 -
+      2255 -func TestHandler_TagsParamTildeExpansion(t *testing.T) {
+      2256 -  u, err := user.Current()
+      2257 -  if err != nil {
+      2258 -    t.Fatalf("user.Current: %v", err)
+      2259 -  }
+      2260 -
+      2261 -  tmpDir, err := os.MkdirTemp(u.HomeDir, "codesnippetd-test-*")
+      2262 -  if err != nil {
+      2263 -    t.Fatalf("MkdirTemp: %v", err)
+      2264 -  }
+      2265 -  defer os.RemoveAll(tmpDir)
+      2266 -
+      2267 -  tagsData, err := os.ReadFile(filepath.Join("testdata", "tags"))
+      2268 -  if err != nil {
+      2269 -    t.Fatalf("reading testdata/tags: %v", err)
+      2270 -  }
+      2271 -  tagsFile := filepath.Join(tmpDir, "tags")
+      2272 -  if err := os.WriteFile(tagsFile, tagsData, 0o644); err != nil {
+      2273 -    t.Fatalf("writing tags: %v", err)
+      2274 -  }
+      2275 -
+      2276 -  rel, err := filepath.Rel(u.HomeDir, tagsFile)
+      2277 -  if err != nil {
+      2278 -    t.Fatalf("Rel: %v", err)
+      2279 -  }
+      2280 -  tildeTags := "~/" + rel
+      2281 -
+      2282 -  srv := httptest.NewServer(newHandler(false))
+      2283 -  defer srv.Close()
+      2284 -
+      2285 -  resp, err := http.Get(srv.URL + "/tags?tags=" + tildeTags)
+      2286 -  if err != nil {
+      2287 -    t.Fatal(err)
+      2288 -  }
+      2289 -  defer resp.Body.Close()
+      2290 -
+      2291 -  if resp.StatusCode != http.StatusOK {
+      2292 -    t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      2293 -  }
+      2294 -  var tags []map[string]interface{}
+      2295 -  if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+      2296 -    t.Fatalf("decode: %v", err)
+      2297 -  }
+      2298 -  if len(tags) == 0 {
+      2299 -    t.Error("expected non-empty tag list with tilde tags param")
+      2300 -  }
+      2301 -}
+      2302 -
+      2303 -// ---- MarshalJSON tests ----
+      2304 -
+      2305 -func TestMarshalJSON_OmitsEmptyOptionalFields(t *testing.T) {
+      2306 -  tag := Tag{
+      2307 -    Type:  "tag",
+      2308 -    Name:  "Foo",
+      2309 -    Path:  "foo.go",
+      2310 -    Extra: map[string]string{},
+      2311 -  }
+      2312 -  b, err := json.Marshal(tag)
+      2313 -  if err != nil {
+      2314 -    t.Fatal(err)
+      2315 -  }
+      2316 -  var m map[string]interface{}
+      2317 -  if err := json.Unmarshal(b, &m); err != nil {
+      2318 -    t.Fatal(err)
+      2319 -  }
+      2320 -  for _, key := range []string{"pattern", "language", "kind", "line"} {
+      2321 -    if _, exists := m[key]; exists {
+      2322 -      t.Errorf("expected %q to be absent when zero/empty, but found in JSON", key)
+      2323 -    }
+      2324 -  }
+      2325 -}
+  ⎿  Found 20 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1 && echo "BUILD OK")
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     parser.c:254:18: warning: null character(s) preserved in string literal [-Wnull-character]
+     BUILD OK
+  ⎿  Found 11 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ Bash(go vet ./... 2>&1 && echo "VET OK")
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     parser.c:254:18: warning: null character(s) preserved in string literal [-Wnull-character]
+     VET OK
+
+⏺ Bash(go test -race ./... 2>&1 | tail -10)
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     parser.c:254:18: warning: null character(s) preserved in string literal [-Wnull-character]
+     # github.com/orimanabu/codesnippetd.test
+     … +3 lines (ctrl+o to expand)
+  ⎿  (timeout 3m)
+
+⏺ 全テストが race detector 付きでもパスしました。
+
+  handlers_test.go の未使用の errors/fmt インポートを整理します。
+
+⏺ Update(handlers_test.go)
+  ⎿  Removed 2 lines
+       3  import (
+       4    "bytes"
+       5    "encoding/json"
+       6 -  "errors"
+       7 -  "fmt"
+       6    "io"
+       7    "log"
+       8    "net/http"
+
+⏺ Update(handlers_test.go)
+  ⎿  Removed 3 lines
+      1458    }
+      1459  }
+      1460
+      1461 -// Ensure errors and fmt are used (they appear in newHandler inline references).
+      1462 -var _ = errors.New
+      1463 -var _ = fmt.Sprintf
+  ⎿  Found 2 new diagnostic issues in 1 file (ctrl+o to expand)
+
+  Read 1 file (ctrl+o to expand)
+  ⎿  Found 10 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1 | grep -v "warning" && echo "BUILD OK")
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     BUILD OK
+
+⏺ ビルドはクリーン（LSP の表示は古いキャッシュ）。最終テストを実行します。
+
+⏺ Bash(go test -count=1 ./... 2>&1 | grep -v "warning")
+  ⎿  # github.com/smacker/go-tree-sitter/lua
+     ok         github.com/orimanabu/codesnippetd       1.096s
+
+⏺ 全テストパス。最終的なファイル構成を確認します。
+
+  Listed 1 directory (ctrl+o to expand)
+
+⏺ 完了です。ファイル分割の結果をまとめます。
+
+  ---
+  完了
+
+  ソースファイル（旧 2ファイル → 新 10ファイル）
+
+  ┌─────────────────────────┬──────────────────────────────────────────────────────────────────────┐
+  │        ファイル         │                                 内容                                 │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ types.go                │ Tag, Snippet, LineRange, TagsDB, pipe, requestMeta, responseRecorder │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ tags.go                 │ parseLine, loadTagsFile, lookupTag など ctags I/O                    │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ paths.go                │ tagsFileForContext, expandTilde, queryTagsPath などパス解決          │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ lines.go                │ isCommentLine, normalizeTagPattern, extractLines などテキスト処理    │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ resolver.go             │ resolveStartEnd, snippetForTag, lineRangeForTag                      │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ handlers.go             │ registerHandlers() + 全 HTTP ハンドラ                                │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ middleware.go           │ corsMiddleware, accessLog                                            │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ main.go                 │ main() のみ（40行）                                                  │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ treesitter.go           │ 汎用 AST ヘルパー（Lua カスタムロジック含む）                        │
+  ├─────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ treesitter_languages.go │ 14言語の定義マップ + isXFile() + 言語別ラッパー                      │
+  └─────────────────────────┴──────────────────────────────────────────────────────────────────────┘
+
+  テストファイル（旧 main_test.go 2326行 → 分割）
+
+  types_test.go, tags_test.go, paths_test.go, lines_test.go, resolver_test.go, handlers_test.go に分割。newHandler() は registerHandlers()
+  を使うように刷新し、テストが実際のサーバー設定を反映するようになりました。
+
+  ビルド・全テスト（race detector 付き）ともパス。
+
+✻ Cooked for 18m 15s
+```
