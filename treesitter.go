@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/kotlin"
 	"github.com/smacker/go-tree-sitter/php"
@@ -14,6 +15,33 @@ import (
 	haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
 	ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
 )
+
+// goDefinitionTypes is the set of tree-sitter node types treated as
+// definitions in Go source files.
+var goDefinitionTypes = map[string]bool{
+	"function_declaration": true,
+	"method_declaration":   true,
+	"type_declaration":     true,
+	"const_declaration":    true,
+	"var_declaration":      true,
+}
+
+// isGoFile reports whether path is a Go source file.
+func isGoFile(path string) bool {
+	return filepath.Ext(path) == ".go"
+}
+
+// resolveEndWithTreeSitterGo returns the 1-based end line of the Go
+// definition starting at startLine (1-based).
+func resolveEndWithTreeSitterGo(content []byte, startLine int) (int, error) {
+	return resolveEndWithTreeSitter(golang.GetLanguage(), goDefinitionTypes, content, startLine)
+}
+
+// resolveStartWithTreeSitterGo returns the 1-based start line (including any
+// leading comment block) for the Go definition whose first line is funcLine.
+func resolveStartWithTreeSitterGo(content []byte, funcLine int) (int, error) {
+	return resolveStartWithTreeSitter(golang.GetLanguage(), content, funcLine)
+}
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
 // definitions in Rust source files.

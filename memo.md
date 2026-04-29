@@ -12723,3 +12723,583 @@ func (r *ConmonOCIRuntime) Name() string {
 
   これ以外（例：.go, .py, .c, .cpp, .java, .rb など ctags が対応する全言語）は ctags + 文字列マッチのフォールバックになります。
 ```
+
+```
+❯ tree-sitterのサポート言語として、Goを追加してください。ファイルの拡張子が `.go` のときはtree sitterのGo
+parserを使うようにしてください。resolveStartWithTreeSitter()の対応もお願いします。テストコードとREADME.mdの更新もお願いします
+
+  Read 1 file, listed 2 directories (ctrl+o to expand)
+
+⏺ golang サブパッケージがあります。内容を確認して実装します。
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+⏺ Go のノード型を確認します。
+
+⏺ Bash(cat > /tmp/check_go_nodes.go << 'EOF'
+      package main…)
+  ⎿  [source_file] 0:0-23:0
+       [comment] 0:0-0:27
+       [package_clause] 1:0-1:11
+     … +79 lines (ctrl+o to expand)
+
+⏺ Go の定義ノード型が確認できました。テストとREADMEも確認します。
+
+⏺ Bash(cat > /tmp/check_go_method.go << 'EOF'
+      package main…)
+  ⎿  [package_clause]
+     [
+     ]
+     … +4 lines (ctrl+o to expand)
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ テストデータのディレクトリ構造とREADMEを確認します。
+
+  Searched for 1 pattern, read 4 files (ctrl+o to expand)
+
+⏺ 全体像が把握できました。実装します。
+
+  作業内容：
+  1. treesitter.go - golang パッケージ追加、Go 用関数群
+  2. main.go - switch 文に Go の case 追加
+  3. testdata/go/sample.go + testdata/go/tags 作成
+  4. treesitter_test.go - Go テスト追加
+  5. README.md 更新
+
+⏺ Update(treesitter.go)
+  ⎿  Added 1 line
+       6    "path/filepath"
+       7
+       8    sitter "github.com/smacker/go-tree-sitter"
+       9 +  "github.com/smacker/go-tree-sitter/golang"
+      10    "github.com/smacker/go-tree-sitter/javascript"
+      11    "github.com/smacker/go-tree-sitter/kotlin"
+      12    "github.com/smacker/go-tree-sitter/php"
+
+⏺ Update(treesitter.go)
+  ⎿  Added 27 lines
+      16    ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
+      17  )
+      18
+      19 +// goDefinitionTypes is the set of tree-sitter node types treated as
+      20 +// definitions in Go source files.
+      21 +var goDefinitionTypes = map[string]bool{
+      22 +  "function_declaration": true,
+      23 +  "method_declaration":   true,
+      24 +  "type_declaration":     true,
+      25 +  "const_declaration":    true,
+      26 +  "var_declaration":      true,
+      27 +}
+      28 +
+      29 +// isGoFile reports whether path is a Go source file.
+      30 +func isGoFile(path string) bool {
+      31 +  return filepath.Ext(path) == ".go"
+      32 +}
+      33 +
+      34 +// resolveEndWithTreeSitterGo returns the 1-based end line of the Go
+      35 +// definition starting at startLine (1-based).
+      36 +func resolveEndWithTreeSitterGo(content []byte, startLine int) (int, error) {
+      37 +  return resolveEndWithTreeSitter(golang.GetLanguage(), goDefinitionTypes, content, startLine)
+      38 +}
+      39 +
+      40 +// resolveStartWithTreeSitterGo returns the 1-based start line (including any
+      41 +// leading comment block) for the Go definition whose first line is funcLine.
+      42 +func resolveStartWithTreeSitterGo(content []byte, funcLine int) (int, error) {
+      43 +  return resolveStartWithTreeSitter(golang.GetLanguage(), content, funcLine)
+      44 +}
+      45 +
+      46  // rustDefinitionTypes is the set of tree-sitter node types treated as
+      47  // definitions in Rust source files.
+      48  var rustDefinitionTypes = map[string]bool{
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+⏺ Bash(go build ./... 2>&1)
+  ⎿  (No output)
+  ⎿  Found 13 new diagnostic issues in 2 files (ctrl+o to expand)
+
+⏺ ビルド成功。次に main.go の switch 文に Go の case を追加します。
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      495      var tsStart int
+      496      var tsErr error
+      497      switch {
+      498 +    case isGoFile(tag.Path):
+      499 +      tsStart, tsErr = resolveStartWithTreeSitterGo(data, funcLine)
+      500      case isRustFile(tag.Path):
+      501        tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
+      502      case isJSFile(tag.Path):
+
+⏺ Update(main.go)
+  ⎿  Added 2 lines
+      534      var tsEnd int
+      535      var tsErr error
+      536      switch {
+      537 +    case isGoFile(tag.Path):
+      538 +      tsEnd, tsErr = resolveEndWithTreeSitterGo(data, funcLine)
+      539      case isRustFile(tag.Path):
+      540        tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
+      541      case isJSFile(tag.Path):
+  ⎿  Found 9 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ 次にテストデータファイルを作成します。
+
+⏺ Bash(mkdir -p /Users/ori/devel/src/github.com/orimanabu/codesnippetd/testdata/go)
+  ⎿  Done
+
+⏺ Write(testdata/go/sample.go)
+  ⎿  Wrote 32 lines to testdata/go/sample.go
+       1 package sample
+       2
+       3 // Greet returns a greeting message for the given name.
+       4 func Greet(name string) string {
+       5        return "Hello, " + name + "!"
+       6 }
+       7
+       8 // Add adds two integers and returns their sum.
+       9 func Add(a, b int) int {
+      10        return a + b
+     … +22 lines (ctrl+o to expand)
+
+⏺ Write(testdata/go/tags)
+  ⎿  Wrote 9 lines to testdata/go/tags
+      1 !_TAG_FILE_FORMAT       2       /extended format; --format=1 will not append ;" to lines/
+      2 !_TAG_FILE_SORTED       1       /0=unsorted, 1=sorted, 2=foldcase/
+      3 !_TAG_PROGRAM_NAME      Universal Ctags //
+      4 Add     sample.go       /^func Add(a, b int) int {$/;"  kind:function   line:9  language:Go
+      5 Area    sample.go       /^func (c \*GoCircle) Area() float64 {$/;"      kind:method     line:25 language:Go
+      6 GoCircle        sample.go       /^type GoCircle struct {$/;"    kind:struct     line:20 language:Go
+      7 GoPoint sample.go       /^type GoPoint struct {$/;"     kind:struct     line:14 language:Go
+      8 GoShape sample.go       /^type GoShape interface {$/;"  kind:interface  line:30 language:Go
+      9 Greet   sample.go       /^func Greet(name string) string {$/;"  kind:function   line:4  language:Go
+
+⏺ 次にテストコードを追加します。まず unit test 用のサンプルデータ（コメントなし）と、isGoFile テスト、HTTP integration テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 132 lines
+      819    }
+      820  }
+      821
+      822 +// sample Go source used across unit tests.
+      823 +// Content must match testdata/go/sample.go line numbers for integration tests.
+      824 +var goSample = []byte(`package sample
+      825 +
+      826 +func Greet(name string) string {
+      827 +  return "Hello, " + name + "!"
+      828 +}
+      829 +
+      830 +func Add(a, b int) int {
+      831 +  return a + b
+      832 +}
+      833 +
+      834 +type GoPoint struct {
+      835 +  X float64
+      836 +  Y float64
+      837 +}
+      838 +
+      839 +type GoCircle struct {
+      840 +  Radius float64
+      841 +}
+      842 +
+      843 +func (c *GoCircle) Area() float64 {
+      844 +  return 3.14159 * c.Radius * c.Radius
+      845 +}
+      846 +
+      847 +type GoShape interface {
+      848 +  Area() float64
+      849 +}
+      850 +
+      851 +const MaxItems = 100
+      852 +
+      853 +var DefaultName = "World"
+      854 +`)
+      855 +
+      856 +// ---- resolveEndWithTreeSitterGo tests ----
+      857 +
+      858 +func TestResolveEndWithTreeSitterGo_Function(t *testing.T) {
+      859 +  // func Greet starts at line 3, ends at line 5
+      860 +  end, err := resolveEndWithTreeSitterGo(goSample, 3)
+      861 +  if err != nil {
+      862 +    t.Fatalf("unexpected error: %v", err)
+      863 +  }
+      864 +  if end != 5 {
+      865 +    t.Errorf("end: got %d, want 5", end)
+      866 +  }
+      867 +}
+      868 +
+      869 +func TestResolveEndWithTreeSitterGo_SecondFunction(t *testing.T) {
+      870 +  // func Add starts at line 7, ends at line 9
+      871 +  end, err := resolveEndWithTreeSitterGo(goSample, 7)
+      872 +  if err != nil {
+      873 +    t.Fatalf("unexpected error: %v", err)
+      874 +  }
+      875 +  if end != 9 {
+      876 +    t.Errorf("end: got %d, want 9", end)
+      877 +  }
+      878 +}
+      879 +
+      880 +func TestResolveEndWithTreeSitterGo_Struct(t *testing.T) {
+      881 +  // type GoPoint struct starts at line 11, ends at line 14
+      882 +  end, err := resolveEndWithTreeSitterGo(goSample, 11)
+      883 +  if err != nil {
+      884 +    t.Fatalf("unexpected error: %v", err)
+      885 +  }
+      886 +  if end != 14 {
+      887 +    t.Errorf("end: got %d, want 14", end)
+      888 +  }
+      889 +}
+      890 +
+      891 +func TestResolveEndWithTreeSitterGo_SecondStruct(t *testing.T) {
+      892 +  // type GoCircle struct starts at line 16, ends at line 18
+      893 +  end, err := resolveEndWithTreeSitterGo(goSample, 16)
+      894 +  if err != nil {
+      895 +    t.Fatalf("unexpected error: %v", err)
+      896 +  }
+      897 +  if end != 18 {
+      898 +    t.Errorf("end: got %d, want 18", end)
+      899 +  }
+      900 +}
+      901 +
+      902 +func TestResolveEndWithTreeSitterGo_Method(t *testing.T) {
+      903 +  // func (c *GoCircle) Area starts at line 20, ends at line 22
+      904 +  end, err := resolveEndWithTreeSitterGo(goSample, 20)
+      905 +  if err != nil {
+      906 +    t.Fatalf("unexpected error: %v", err)
+      907 +  }
+      908 +  if end != 22 {
+      909 +    t.Errorf("end: got %d, want 22", end)
+      910 +  }
+      911 +}
+      912 +
+      913 +func TestResolveEndWithTreeSitterGo_Interface(t *testing.T) {
+      914 +  // type GoShape interface starts at line 24, ends at line 26
+      915 +  end, err := resolveEndWithTreeSitterGo(goSample, 24)
+      916 +  if err != nil {
+      917 +    t.Fatalf("unexpected error: %v", err)
+      918 +  }
+      919 +  if end != 26 {
+      920 +    t.Errorf("end: got %d, want 26", end)
+      921 +  }
+      922 +}
+      923 +
+      924 +func TestResolveEndWithTreeSitterGo_Const(t *testing.T) {
+      925 +  // const MaxItems starts at line 28, ends at line 28
+      926 +  end, err := resolveEndWithTreeSitterGo(goSample, 28)
+      927 +  if err != nil {
+      928 +    t.Fatalf("unexpected error: %v", err)
+      929 +  }
+      930 +  if end != 28 {
+      931 +    t.Errorf("end: got %d, want 28", end)
+      932 +  }
+      933 +}
+      934 +
+      935 +func TestResolveEndWithTreeSitterGo_Var(t *testing.T) {
+      936 +  // var DefaultName starts at line 30, ends at line 30
+      937 +  end, err := resolveEndWithTreeSitterGo(goSample, 30)
+      938 +  if err != nil {
+      939 +    t.Fatalf("unexpected error: %v", err)
+      940 +  }
+      941 +  if end != 30 {
+      942 +    t.Errorf("end: got %d, want 30", end)
+      943 +  }
+      944 +}
+      945 +
+      946 +func TestResolveEndWithTreeSitterGo_LineNotFound(t *testing.T) {
+      947 +  // line 2 is blank — no definition starts there
+      948 +  _, err := resolveEndWithTreeSitterGo(goSample, 2)
+      949 +  if err == nil {
+      950 +    t.Fatal("expected error for blank line with no definition")
+      951 +  }
+      952 +}
+      953 +
+      954  // ---- isRustFile / isJSFile tests ----
+      955
+      956  func TestIsRustFile(t *testing.T) {
+
+⏺ 次に isGoFile テストと HTTP integration テストを追加します。
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 19 lines
+      1105    }
+      1106  }
+      1107
+      1108 +func TestIsGoFile(t *testing.T) {
+      1109 +  cases := []struct {
+      1110 +    path string
+      1111 +    want bool
+      1112 +  }{
+      1113 +    {"main.go", true},
+      1114 +    {"src/foo.go", true},
+      1115 +    {"main.rs", false},
+      1116 +    {"app.ts", false},
+      1117 +    {"app.js", false},
+      1118 +    {"noextension", false},
+      1119 +  }
+      1120 +  for _, c := range cases {
+      1121 +    if got := isGoFile(c.path); got != c.want {
+      1122 +      t.Errorf("isGoFile(%q) = %v, want %v", c.path, got, c.want)
+      1123 +    }
+      1124 +  }
+      1125 +}
+      1126 +
+      1127  // ---- HTTP handler integration tests for Rust files ----
+      1128
+      1129  func TestSnippetHandler_RustFile_UsesTreeSitter(t *testing.T) {
+  ⎿  Found 5 new diagnostic issues in 1 file (ctrl+o to expand)
+
+⏺ HTTP integration テストを追加します。testdata/go/sample.go の行番号を整理します：コメントを含む start と定義の end を確認します。
+
+  - Greet: funcLine=4, comment on line 3 → Start=3, End=6
+  - Add: funcLine=9, comment on line 8 → Start=8, End=11
+  - GoPoint: funcLine=14, comment on line 13 → Start=13, End=17
+  - GoCircle: funcLine=20, comment on line 19 → Start=19, End=22
+  - Area: funcLine=25, comment on line 24 → Start=24, End=27
+  - GoShape: funcLine=30, comment on line 29 → Start=29, End=32
+
+⏺ Update(treesitter_test.go)
+  ⎿  Added 166 lines
+      1124    }
+      1125  }
+      1126
+      1127 +// ---- HTTP handler integration tests for Go files ----
+      1128 +
+      1129 +func TestSnippetHandler_GoFile_Function(t *testing.T) {
+      1130 +  // go/tags has no "end" field, so tree-sitter must supply it.
+      1131 +  // Doc comment on line 3 is included in Start.
+      1132 +  withCwd(t, "testdata", func() {
+      1133 +    srv := httptest.NewServer(newHandler(true))
+      1134 +    defer srv.Close()
+      1135 +
+      1136 +    resp, err := http.Get(srv.URL + "/snippets/Greet?context=go")
+      1137 +    if err != nil {
+      1138 +      t.Fatal(err)
+      1139 +    }
+      1140 +    defer resp.Body.Close()
+      1141 +
+      1142 +    if resp.StatusCode != http.StatusOK {
+      1143 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1144 +    }
+      1145 +
+      1146 +    var snippets []Snippet
+      1147 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1148 +      t.Fatalf("decode: %v", err)
+      1149 +    }
+      1150 +    if len(snippets) != 1 {
+      1151 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1152 +    }
+      1153 +    s := snippets[0]
+      1154 +    if s.Start != 3 || s.End != 6 {
+      1155 +      t.Errorf("Start/End: got %d/%d, want 3/6", s.Start, s.End)
+      1156 +    }
+      1157 +    if !strings.Contains(s.Code, "// Greet") {
+      1158 +      t.Errorf("Code should contain leading comment, got %q", s.Code)
+      1159 +    }
+      1160 +    if !strings.Contains(s.Code, "func Greet") {
+      1161 +      t.Errorf("Code should contain func Greet, got %q", s.Code)
+      1162 +    }
+      1163 +    if strings.Contains(s.Code, "func Add") {
+      1164 +      t.Errorf("Code should not extend past end of function, got %q", s.Code)
+      1165 +    }
+      1166 +  })
+      1167 +}
+      1168 +
+      1169 +func TestSnippetHandler_GoFile_SecondFunction(t *testing.T) {
+      1170 +  withCwd(t, "testdata", func() {
+      1171 +    srv := httptest.NewServer(newHandler(true))
+      1172 +    defer srv.Close()
+      1173 +
+      1174 +    resp, err := http.Get(srv.URL + "/snippets/Add?context=go")
+      1175 +    if err != nil {
+      1176 +      t.Fatal(err)
+      1177 +    }
+      1178 +    defer resp.Body.Close()
+      1179 +
+      1180 +    var snippets []Snippet
+      1181 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1182 +      t.Fatalf("decode: %v", err)
+      1183 +    }
+      1184 +    if len(snippets) != 1 {
+      1185 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1186 +    }
+      1187 +    if snippets[0].Start != 8 || snippets[0].End != 11 {
+      1188 +      t.Errorf("Start/End: got %d/%d, want 8/11", snippets[0].Start, snippets[0].End)
+      1189 +    }
+      1190 +  })
+      1191 +}
+      1192 +
+      1193 +func TestSnippetHandler_GoFile_Struct(t *testing.T) {
+      1194 +  withCwd(t, "testdata", func() {
+      1195 +    srv := httptest.NewServer(newHandler(true))
+      1196 +    defer srv.Close()
+      1197 +
+      1198 +    resp, err := http.Get(srv.URL + "/snippets/GoPoint?context=go")
+      1199 +    if err != nil {
+      1200 +      t.Fatal(err)
+      1201 +    }
+      1202 +    defer resp.Body.Close()
+      1203 +
+      1204 +    var snippets []Snippet
+      1205 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1206 +      t.Fatalf("decode: %v", err)
+      1207 +    }
+      1208 +    if len(snippets) != 1 {
+      1209 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1210 +    }
+      1211 +    if snippets[0].Start != 13 || snippets[0].End != 17 {
+      1212 +      t.Errorf("Start/End: got %d/%d, want 13/17", snippets[0].Start, snippets[0].End)
+      1213 +    }
+      1214 +  })
+      1215 +}
+      1216 +
+      1217 +func TestSnippetHandler_GoFile_Method(t *testing.T) {
+      1218 +  withCwd(t, "testdata", func() {
+      1219 +    srv := httptest.NewServer(newHandler(true))
+      1220 +    defer srv.Close()
+      1221 +
+      1222 +    resp, err := http.Get(srv.URL + "/snippets/Area?context=go")
+      1223 +    if err != nil {
+      1224 +      t.Fatal(err)
+      1225 +    }
+      1226 +    defer resp.Body.Close()
+      1227 +
+      1228 +    var snippets []Snippet
+      1229 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1230 +      t.Fatalf("decode: %v", err)
+      1231 +    }
+      1232 +    if len(snippets) != 1 {
+      1233 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1234 +    }
+      1235 +    if snippets[0].Start != 24 || snippets[0].End != 27 {
+      1236 +      t.Errorf("Start/End: got %d/%d, want 24/27", snippets[0].Start, snippets[0].End)
+      1237 +    }
+      1238 +  })
+      1239 +}
+      1240 +
+      1241 +func TestSnippetHandler_GoFile_Interface(t *testing.T) {
+      1242 +  withCwd(t, "testdata", func() {
+      1243 +    srv := httptest.NewServer(newHandler(true))
+      1244 +    defer srv.Close()
+      1245 +
+      1246 +    resp, err := http.Get(srv.URL + "/snippets/GoShape?context=go")
+      1247 +    if err != nil {
+      1248 +      t.Fatal(err)
+      1249 +    }
+      1250 +    defer resp.Body.Close()
+      1251 +
+      1252 +    var snippets []Snippet
+      1253 +    if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+      1254 +      t.Fatalf("decode: %v", err)
+      1255 +    }
+      1256 +    if len(snippets) != 1 {
+      1257 +      t.Fatalf("expected 1 snippet, got %d", len(snippets))
+      1258 +    }
+      1259 +    if snippets[0].Start != 29 || snippets[0].End != 32 {
+      1260 +      t.Errorf("Start/End: got %d/%d, want 29/32", snippets[0].Start, snippets[0].End)
+      1261 +    }
+      1262 +  })
+      1263 +}
+      1264 +
+      1265 +func TestLinesHandler_GoFile_UsesTreeSitter(t *testing.T) {
+      1266 +  withCwd(t, "testdata", func() {
+      1267 +    srv := httptest.NewServer(newHandler(true))
+      1268 +    defer srv.Close()
+      1269 +
+      1270 +    resp, err := http.Get(srv.URL + "/lines/Greet?context=go")
+      1271 +    if err != nil {
+      1272 +      t.Fatal(err)
+      1273 +    }
+      1274 +    defer resp.Body.Close()
+      1275 +
+      1276 +    if resp.StatusCode != http.StatusOK {
+      1277 +      t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+      1278 +    }
+      1279 +
+      1280 +    var ranges []LineRange
+      1281 +    if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+      1282 +      t.Fatalf("decode: %v", err)
+      1283 +    }
+      1284 +    if len(ranges) != 1 {
+      1285 +      t.Fatalf("expected 1 range, got %d", len(ranges))
+      1286 +    }
+      1287 +    if ranges[0].Start != 3 || ranges[0].End != 6 {
+      1288 +      t.Errorf("Start/End: got %d/%d, want 3/6", ranges[0].Start, ranges[0].End)
+      1289 +    }
+      1290 +  })
+      1291 +}
+      1292 +
+      1293  // ---- HTTP handler integration tests for Rust files ----
+      1294
+      1295  func TestSnippetHandler_RustFile_UsesTreeSitter(t *testing.T) {
+
+⏺ Bash(go test ./... 2>&1)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.876s
+
+⏺ 全テスト通過。最後に README.md を更新します。
+
+⏺ Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      20  | `-l` | — | Shorthand for `-listen` |
+      21  | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
+      22  | `-p` | — | Shorthand for `-port` |
+      23 -| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haske
+         -ll `.hs`, OCaml `.ml`/`.mli`, PHP `.php`, and Kotlin `.kt`) |
+      23 +| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Go `.go`, Rust `.rs`, JavaScript `.js`, TypeScript `.
+         +ts`, Haskell `.hs`, OCaml `.ml`/`.mli`, PHP `.php`, and Kotlin `.kt`) |
+      24
+      25  The server resolves tag files relative to its **current working directory**:
+      26
+
+⏺ Update(README.md)
+  ⎿  Added 2 lines, removed 2 lines
+      154  The end line is resolved in the following order of priority:
+      155
+      156  1. The `end` extension field recorded in the ctags tags file.
+      157 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`).
+      157 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.go`, `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`)
+          +.
+      158  3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
+      159
+      160  **Path Parameters**
+     ...
+      209  The end line is resolved in the following order of priority:
+      210
+      211  1. The `end` extension field recorded in the ctags tags file.
+      212 -2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`).
+      212 +2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.go`, `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`)
+          +.
+      213  3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
+      214
+      215  **Path Parameters**
+
+⏺ Bash(go build ./... && go test ./...)
+  ⎿  ok         github.com/orimanabu/codesnippetd       0.634s
+
+⏺ 全て完了です。
+
+  変更内容まとめ
+
+  treesitter.go
+  - github.com/smacker/go-tree-sitter/golang をインポート
+  - goDefinitionTypes (function_declaration, method_declaration, type_declaration, const_declaration, var_declaration)
+  - isGoFile(path) — .go 拡張子判定
+  - resolveEndWithTreeSitterGo(content, startLine) — end 行解決
+  - resolveStartWithTreeSitterGo(content, funcLine) — コメント込み start 行解決
+
+  main.go
+  - resolveStartEnd の start / end 両方の switch に isGoFile の case を追加
+
+  testdata/go/
+  - sample.go — doc コメント付きの Go サンプルソース（関数、メソッド、struct、interface）
+  - tags — end フィールドなし（tree-sitter が end を解決するケースをテスト）
+
+  treesitter_test.go
+  - goSample — unit test 用サンプル（コメントなし）
+  - TestResolveEndWithTreeSitterGo_* — 関数・メソッド・struct・interface・const・var の end 行テスト
+  - TestIsGoFile — ファイル拡張子判定テスト
+  - TestSnippetHandler_GoFile_* / TestLinesHandler_GoFile_* — HTTP integration テスト（コメント込み start + tree-sitter による end を検証）
+
+  README.md — tree-sitter 対応言語リストに .go を追加
+
+✻ Worked for 5m 30s
+```

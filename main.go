@@ -495,6 +495,8 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 		var tsStart int
 		var tsErr error
 		switch {
+		case isGoFile(tag.Path):
+			tsStart, tsErr = resolveStartWithTreeSitterGo(data, funcLine)
 		case isRustFile(tag.Path):
 			tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):
@@ -532,6 +534,8 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 		var tsEnd int
 		var tsErr error
 		switch {
+		case isGoFile(tag.Path):
+			tsEnd, tsErr = resolveEndWithTreeSitterGo(data, funcLine)
 		case isRustFile(tag.Path):
 			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
 		case isJSFile(tag.Path):

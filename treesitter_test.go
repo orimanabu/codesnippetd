@@ -819,6 +819,138 @@ func TestResolveEndWithTreeSitterHS_LineNotFound(t *testing.T) {
 	}
 }
 
+// sample Go source used across unit tests.
+// Content must match testdata/go/sample.go line numbers for integration tests.
+var goSample = []byte(`package sample
+
+func Greet(name string) string {
+	return "Hello, " + name + "!"
+}
+
+func Add(a, b int) int {
+	return a + b
+}
+
+type GoPoint struct {
+	X float64
+	Y float64
+}
+
+type GoCircle struct {
+	Radius float64
+}
+
+func (c *GoCircle) Area() float64 {
+	return 3.14159 * c.Radius * c.Radius
+}
+
+type GoShape interface {
+	Area() float64
+}
+
+const MaxItems = 100
+
+var DefaultName = "World"
+`)
+
+// ---- resolveEndWithTreeSitterGo tests ----
+
+func TestResolveEndWithTreeSitterGo_Function(t *testing.T) {
+	// func Greet starts at line 3, ends at line 5
+	end, err := resolveEndWithTreeSitterGo(goSample, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 5 {
+		t.Errorf("end: got %d, want 5", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_SecondFunction(t *testing.T) {
+	// func Add starts at line 7, ends at line 9
+	end, err := resolveEndWithTreeSitterGo(goSample, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 9 {
+		t.Errorf("end: got %d, want 9", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_Struct(t *testing.T) {
+	// type GoPoint struct starts at line 11, ends at line 14
+	end, err := resolveEndWithTreeSitterGo(goSample, 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 14 {
+		t.Errorf("end: got %d, want 14", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_SecondStruct(t *testing.T) {
+	// type GoCircle struct starts at line 16, ends at line 18
+	end, err := resolveEndWithTreeSitterGo(goSample, 16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 18 {
+		t.Errorf("end: got %d, want 18", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_Method(t *testing.T) {
+	// func (c *GoCircle) Area starts at line 20, ends at line 22
+	end, err := resolveEndWithTreeSitterGo(goSample, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 22 {
+		t.Errorf("end: got %d, want 22", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_Interface(t *testing.T) {
+	// type GoShape interface starts at line 24, ends at line 26
+	end, err := resolveEndWithTreeSitterGo(goSample, 24)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 26 {
+		t.Errorf("end: got %d, want 26", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_Const(t *testing.T) {
+	// const MaxItems starts at line 28, ends at line 28
+	end, err := resolveEndWithTreeSitterGo(goSample, 28)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 28 {
+		t.Errorf("end: got %d, want 28", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_Var(t *testing.T) {
+	// var DefaultName starts at line 30, ends at line 30
+	end, err := resolveEndWithTreeSitterGo(goSample, 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if end != 30 {
+		t.Errorf("end: got %d, want 30", end)
+	}
+}
+
+func TestResolveEndWithTreeSitterGo_LineNotFound(t *testing.T) {
+	// line 2 is blank — no definition starts there
+	_, err := resolveEndWithTreeSitterGo(goSample, 2)
+	if err == nil {
+		t.Fatal("expected error for blank line with no definition")
+	}
+}
+
 // ---- isRustFile / isJSFile tests ----
 
 func TestIsRustFile(t *testing.T) {
@@ -971,6 +1103,191 @@ func TestIsKtFile(t *testing.T) {
 			t.Errorf("isKtFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
+}
+
+func TestIsGoFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.go", true},
+		{"src/foo.go", true},
+		{"main.rs", false},
+		{"app.ts", false},
+		{"app.js", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isGoFile(c.path); got != c.want {
+			t.Errorf("isGoFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+// ---- HTTP handler integration tests for Go files ----
+
+func TestSnippetHandler_GoFile_Function(t *testing.T) {
+	// go/tags has no "end" field, so tree-sitter must supply it.
+	// Doc comment on line 3 is included in Start.
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Greet?context=go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		s := snippets[0]
+		if s.Start != 3 || s.End != 6 {
+			t.Errorf("Start/End: got %d/%d, want 3/6", s.Start, s.End)
+		}
+		if !strings.Contains(s.Code, "// Greet") {
+			t.Errorf("Code should contain leading comment, got %q", s.Code)
+		}
+		if !strings.Contains(s.Code, "func Greet") {
+			t.Errorf("Code should contain func Greet, got %q", s.Code)
+		}
+		if strings.Contains(s.Code, "func Add") {
+			t.Errorf("Code should not extend past end of function, got %q", s.Code)
+		}
+	})
+}
+
+func TestSnippetHandler_GoFile_SecondFunction(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Add?context=go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 8 || snippets[0].End != 11 {
+			t.Errorf("Start/End: got %d/%d, want 8/11", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_GoFile_Struct(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/GoPoint?context=go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 13 || snippets[0].End != 17 {
+			t.Errorf("Start/End: got %d/%d, want 13/17", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_GoFile_Method(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/Area?context=go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 24 || snippets[0].End != 27 {
+			t.Errorf("Start/End: got %d/%d, want 24/27", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestSnippetHandler_GoFile_Interface(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/snippets/GoShape?context=go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var snippets []Snippet
+		if err := json.NewDecoder(resp.Body).Decode(&snippets); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(snippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(snippets))
+		}
+		if snippets[0].Start != 29 || snippets[0].End != 32 {
+			t.Errorf("Start/End: got %d/%d, want 29/32", snippets[0].Start, snippets[0].End)
+		}
+	})
+}
+
+func TestLinesHandler_GoFile_UsesTreeSitter(t *testing.T) {
+	withCwd(t, "testdata", func() {
+		srv := httptest.NewServer(newHandler(true))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + "/lines/Greet?context=go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var ranges []LineRange
+		if err := json.NewDecoder(resp.Body).Decode(&ranges); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(ranges) != 1 {
+			t.Fatalf("expected 1 range, got %d", len(ranges))
+		}
+		if ranges[0].Start != 3 || ranges[0].End != 6 {
+			t.Errorf("Start/End: got %d/%d, want 3/6", ranges[0].Start, ranges[0].End)
+		}
+	})
 }
 
 // ---- HTTP handler integration tests for Rust files ----

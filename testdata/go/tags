@@ -1,0 +1,9 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_NAME	Universal Ctags	//
+Add	sample.go	/^func Add(a, b int) int {$/;"	kind:function	line:9	language:Go
+Area	sample.go	/^func (c \*GoCircle) Area() float64 {$/;"	kind:method	line:25	language:Go
+GoCircle	sample.go	/^type GoCircle struct {$/;"	kind:struct	line:20	language:Go
+GoPoint	sample.go	/^type GoPoint struct {$/;"	kind:struct	line:14	language:Go
+GoShape	sample.go	/^type GoShape interface {$/;"	kind:interface	line:30	language:Go
+Greet	sample.go	/^func Greet(name string) string {$/;"	kind:function	line:4	language:Go
