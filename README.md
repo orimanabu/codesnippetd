@@ -11,7 +11,7 @@ Be aware that certain queries may place a heavy load on the tag search process, 
 ## Usage
 
 ```
-codesnippetd [-addr <listen-address>]
+codesnippetd [-listen <listen-address>] [-port <port>] [--no-tree-sitter]
 ```
 
 | Flag | Default | Description |
@@ -20,12 +20,14 @@ codesnippetd [-addr <listen-address>]
 | `-l` | — | Shorthand for `-listen` |
 | `-port`, `--port` | — | Port number to listen on; overrides `-listen` when set |
 | `-p` | — | Shorthand for `-port` |
-| `--tree-sitter` | `false` | Use tree-sitter to resolve end lines when ctags does not provide them (supports Go `.go`, Python `.py`, Ruby `.rb`, Java `.java`, C `.c`/`.h`, C++ `.cc`/`.cpp`/`.cxx`/`.hh`/`.hpp`/`.hxx`, Rust `.rs`, JavaScript `.js`, TypeScript `.ts`, Haskell `.hs`, OCaml `.ml`/`.mli`, PHP `.php`, Kotlin `.kt`, and Lua `.lua`) |
+| `--no-tree-sitter` | `false` | Disable tree-sitter and rely only on ctags-provided end lines |
+| `--tree-sitter` | `true` | Deprecated no-op flag kept for backwards compatibility; tree-sitter is enabled by default |
 
 The server resolves tag files relative to its **current working directory**:
 
 - Default: `./tags`
 - With `?context=<path>`: `./<path>/tags`
+- With `?tags=<path>`: use the provided tags file path directly
 
 ## API Reference
 
@@ -60,6 +62,7 @@ Returns all tags from the tags file.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+| `tags` | No | Exact tags file path to use. When set, it takes precedence over `context`. |
 
 **Responses**
 
@@ -74,6 +77,7 @@ Returns all tags from the tags file.
 ```
 GET /tags
 GET /tags?context=myproject
+GET /tags?tags=/path/to/project/tags
 ```
 
 ```json
@@ -111,6 +115,7 @@ Returns all tags matching the given name.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+| `tags` | No | Exact tags file path to use. When set, it takes precedence over `context`. |
 
 **Responses**
 
@@ -125,6 +130,7 @@ Returns all tags matching the given name.
 ```
 GET /tags/MyFunc
 GET /tags/MyFunc?context=myproject
+GET /tags/MyFunc?tags=/path/to/project/tags
 ```
 
 ```json
@@ -154,7 +160,7 @@ Returns code snippets extracted from the source files for all tags matching the 
 The end line is resolved in the following order of priority:
 
 1. The `end` extension field recorded in the ctags tags file.
-2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.go`, `.py`, `.rb`, `.java`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`, `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`).
+2. Tree-sitter analysis (enabled by default unless `--no-tree-sitter` is set, for supported languages: `.go`, `.py`, `.rb`, `.java`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`, `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, `.kt`, and `.lua`).
 3. If neither source provides an end line, `end` is returned as `0` and the snippet contains only the single line at `start`.
 
 **Path Parameters**
@@ -168,6 +174,7 @@ The end line is resolved in the following order of priority:
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+| `tags` | No | Exact tags file path to use. When set, it takes precedence over `context`. |
 
 **Responses**
 
@@ -182,6 +189,7 @@ The end line is resolved in the following order of priority:
 ```
 GET /snippets/MyFunc
 GET /snippets/MyFunc?context=myproject
+GET /snippets/MyFunc?tags=/path/to/project/tags
 ```
 
 ```json
@@ -209,7 +217,7 @@ Returns the start and end line numbers for all tags matching the given name, wit
 The end line is resolved in the following order of priority:
 
 1. The `end` extension field recorded in the ctags tags file.
-2. Tree-sitter analysis (when `--tree-sitter` is enabled and the file is a supported language: `.go`, `.py`, `.rb`, `.java`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`, `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, or `.kt`).
+2. Tree-sitter analysis (enabled by default unless `--no-tree-sitter` is set, for supported languages: `.go`, `.py`, `.rb`, `.java`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`, `.rs`, `.js`, `.ts`, `.hs`, `.ml`, `.mli`, `.php`, `.kt`, and `.lua`).
 3. If neither source provides an end line, `end` is returned as `0`, indicating that the end of the definition is unknown.
 
 **Path Parameters**
@@ -223,6 +231,7 @@ The end line is resolved in the following order of priority:
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `context` | No | Subdirectory path to look up the tags file. If omitted, `./tags` is used; otherwise `./<context>/tags` is used. |
+| `tags` | No | Exact tags file path to use. When set, it takes precedence over `context`. |
 
 **Responses**
 
@@ -237,6 +246,7 @@ The end line is resolved in the following order of priority:
 ```
 GET /lines/MyFunc
 GET /lines/MyFunc?context=myproject
+GET /lines/MyFunc?tags=/path/to/project/tags
 ```
 
 ```json

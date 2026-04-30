@@ -8,6 +8,17 @@ import (
 	"testing"
 )
 
+func writeFakeReadtags(t *testing.T, script string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "readtags")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake readtags: %v", err)
+	}
+	t.Setenv("PATH", dir)
+}
+
 // ---- parseLine tests ----
 
 func TestParseLine_SkipsMetadataLines(t *testing.T) {
@@ -167,5 +178,62 @@ func TestLoadTagsFile_MultipleTagsSameName(t *testing.T) {
 	tags := db.lookup("overloaded")
 	if len(tags) != 2 {
 		t.Fatalf("expected 2 tags for overloaded, got %d", len(tags))
+	}
+}
+
+func TestLookupTag_FallsBackWhenReadtagsUnavailable(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	tags, err := lookupTag(filepath.Join("testdata", "tags"), "MyStruct")
+	if err != nil {
+		t.Fatalf("lookupTag: %v", err)
+	}
+	if len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(tags))
+	}
+	if tags[0].Name != "MyStruct" {
+		t.Errorf("Name: got %q, want %q", tags[0].Name, "MyStruct")
+	}
+}
+
+func TestLookupTag_UsesReadtagsWhenAvailable(t *testing.T) {
+	writeFakeReadtags(t, "#!/bin/sh\nprintf '%s\\n' 'SubFunc\tsub/sub.go\t/^func SubFunc() {$/;\"\tkind:function\tline:3\tlanguage:Go'\n")
+
+	tags, err := lookupTag(filepath.Join("testdata", "sub", "tags"), "SubFunc")
+	if err != nil {
+		t.Fatalf("lookupTag: %v", err)
+	}
+	if len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(tags))
+	}
+	if tags[0].Path != "sub/sub.go" {
+		t.Errorf("Path: got %q, want %q", tags[0].Path, "sub/sub.go")
+	}
+}
+
+func TestLookupWithReadtags_ReturnsCommandError(t *testing.T) {
+	writeFakeReadtags(t, "#!/bin/sh\necho 'boom' >&2\nexit 1\n")
+
+	_, err := lookupWithReadtags(filepath.Join("testdata", "tags"), "MyStruct")
+	if err == nil {
+		t.Fatal("expected error from readtags command")
+	}
+	if !strings.Contains(err.Error(), "readtags: boom") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestLookupWithReadtags_ParsesOutput(t *testing.T) {
+	writeFakeReadtags(t, "#!/bin/sh\nprintf '%s\\n' 'Run\tsample.go\t/^func (m \\*MyStruct) Run() error {$/;\"\tkind:method\tline:17\tlanguage:Go\ttyperef:typename:error'\n")
+
+	tags, err := lookupWithReadtags(filepath.Join("testdata", "tags"), "Run")
+	if err != nil {
+		t.Fatalf("lookupWithReadtags: %v", err)
+	}
+	if len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(tags))
+	}
+	if tags[0].Extra["typeref"] != "typename:error" {
+		t.Errorf("Extra[typeref]: got %q, want %q", tags[0].Extra["typeref"], "typename:error")
 	}
 }
