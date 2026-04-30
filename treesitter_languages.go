@@ -6,20 +6,7 @@ import (
 	"path/filepath"
 
 	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/c"
-	"github.com/smacker/go-tree-sitter/cpp"
-	"github.com/smacker/go-tree-sitter/golang"
-	"github.com/smacker/go-tree-sitter/java"
-	"github.com/smacker/go-tree-sitter/javascript"
-	"github.com/smacker/go-tree-sitter/kotlin"
 	"github.com/smacker/go-tree-sitter/lua"
-	"github.com/smacker/go-tree-sitter/php"
-	"github.com/smacker/go-tree-sitter/python"
-	"github.com/smacker/go-tree-sitter/ruby"
-	"github.com/smacker/go-tree-sitter/rust"
-	"github.com/smacker/go-tree-sitter/typescript/typescript"
-	haskell "github.com/tree-sitter/tree-sitter-haskell/bindings/go"
-	ocaml "github.com/tree-sitter/tree-sitter-ocaml/bindings/go"
 )
 
 // goDefinitionTypes is the set of tree-sitter node types treated as
@@ -37,18 +24,6 @@ func isGoFile(path string) bool {
 	return filepath.Ext(path) == ".go"
 }
 
-// resolveEndWithTreeSitterGo returns the 1-based end line of the Go
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterGo(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(golang.GetLanguage(), goDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterGo returns the 1-based start line (including any
-// leading comment block) for the Go definition whose first line is funcLine.
-func resolveStartWithTreeSitterGo(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(golang.GetLanguage(), content, funcLine)
-}
-
 // pythonDefinitionTypes is the set of tree-sitter node types treated as
 // definitions in Python source files.
 var pythonDefinitionTypes = map[string]bool{
@@ -60,19 +35,6 @@ var pythonDefinitionTypes = map[string]bool{
 // isPyFile reports whether path is a Python source file.
 func isPyFile(path string) bool {
 	return filepath.Ext(path) == ".py"
-}
-
-// resolveEndWithTreeSitterPython returns the 1-based end line of the Python
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterPython(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(python.GetLanguage(), pythonDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterPython returns the 1-based start line (including
-// any leading comment block) for the Python definition whose first line is
-// funcLine.
-func resolveStartWithTreeSitterPython(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(python.GetLanguage(), content, funcLine)
 }
 
 // rubyDefinitionTypes is the set of tree-sitter node types treated as
@@ -90,19 +52,6 @@ func isRbFile(path string) bool {
 	return filepath.Ext(path) == ".rb"
 }
 
-// resolveEndWithTreeSitterRuby returns the 1-based end line of the Ruby
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterRuby(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(ruby.GetLanguage(), rubyDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterRuby returns the 1-based start line (including
-// any leading comment block) for the Ruby definition whose first line is
-// funcLine.
-func resolveStartWithTreeSitterRuby(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(ruby.GetLanguage(), content, funcLine)
-}
-
 // javaDefinitionTypes is the set of tree-sitter node types treated as
 // definitions in Java source files.
 var javaDefinitionTypes = map[string]bool{
@@ -118,19 +67,6 @@ var javaDefinitionTypes = map[string]bool{
 // isJavaFile reports whether path is a Java source file.
 func isJavaFile(path string) bool {
 	return filepath.Ext(path) == ".java"
-}
-
-// resolveEndWithTreeSitterJava returns the 1-based end line of the Java
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterJava(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(java.GetLanguage(), javaDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterJava returns the 1-based start line (including
-// any leading comment block) for the Java definition whose first line is
-// funcLine.
-func resolveStartWithTreeSitterJava(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(java.GetLanguage(), content, funcLine)
 }
 
 // rustDefinitionTypes is the set of tree-sitter node types treated as
@@ -153,18 +89,6 @@ func isRustFile(path string) bool {
 	return filepath.Ext(path) == ".rs"
 }
 
-// resolveEndWithTreeSitterRust returns the 1-based end line of the Rust
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterRust(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(rust.GetLanguage(), rustDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterRust returns the 1-based start line (including any
-// leading comment block) for the Rust definition whose first line is funcLine.
-func resolveStartWithTreeSitterRust(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(rust.GetLanguage(), content, funcLine)
-}
-
 // jsDefinitionTypes is the set of tree-sitter node types treated as
 // definitions in JavaScript source files.
 var jsDefinitionTypes = map[string]bool{
@@ -180,18 +104,6 @@ var jsDefinitionTypes = map[string]bool{
 // isJSFile reports whether path is a JavaScript source file.
 func isJSFile(path string) bool {
 	return filepath.Ext(path) == ".js"
-}
-
-// resolveEndWithTreeSitterJS returns the 1-based end line of the JavaScript
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterJS(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(javascript.GetLanguage(), jsDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterJS returns the 1-based start line (including any
-// leading comment block) for the JavaScript definition whose first line is funcLine.
-func resolveStartWithTreeSitterJS(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(javascript.GetLanguage(), content, funcLine)
 }
 
 // tsDefinitionTypes is the set of tree-sitter node types treated as
@@ -219,18 +131,6 @@ func isTSFile(path string) bool {
 	return filepath.Ext(path) == ".ts"
 }
 
-// resolveEndWithTreeSitterTS returns the 1-based end line of the TypeScript
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterTS(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(typescript.GetLanguage(), tsDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterTS returns the 1-based start line (including any
-// leading comment block) for the TypeScript definition whose first line is funcLine.
-func resolveStartWithTreeSitterTS(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(typescript.GetLanguage(), content, funcLine)
-}
-
 // hsDefinitionTypes is the set of tree-sitter node types treated as
 // definitions in Haskell source files.
 // Note: "type_synomym" is the spelling used by the tree-sitter-haskell grammar.
@@ -249,18 +149,6 @@ func isHSFile(path string) bool {
 	return filepath.Ext(path) == ".hs"
 }
 
-// resolveEndWithTreeSitterHS returns the 1-based end line of the Haskell
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterHS(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(sitter.NewLanguage(haskell.Language()), hsDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterHS returns the 1-based start line (including any
-// leading comment block) for the Haskell definition whose first line is funcLine.
-func resolveStartWithTreeSitterHS(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(sitter.NewLanguage(haskell.Language()), content, funcLine)
-}
-
 // ktDefinitionTypes is the set of tree-sitter node types treated as
 // definitions in Kotlin source files. Kotlin interfaces and enums are
 // represented as class_declaration in the tree-sitter grammar.
@@ -273,18 +161,6 @@ var ktDefinitionTypes = map[string]bool{
 // isKtFile reports whether path is a Kotlin source file.
 func isKtFile(path string) bool {
 	return filepath.Ext(path) == ".kt"
-}
-
-// resolveEndWithTreeSitterKotlin returns the 1-based end line of the Kotlin
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterKotlin(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(kotlin.GetLanguage(), ktDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterKotlin returns the 1-based start line (including any
-// leading comment block) for the Kotlin definition whose first line is funcLine.
-func resolveStartWithTreeSitterKotlin(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(kotlin.GetLanguage(), content, funcLine)
 }
 
 // phpDefinitionTypes is the set of tree-sitter node types treated as
@@ -300,18 +176,6 @@ var phpDefinitionTypes = map[string]bool{
 // isPHPFile reports whether path is a PHP source file.
 func isPHPFile(path string) bool {
 	return filepath.Ext(path) == ".php"
-}
-
-// resolveEndWithTreeSitterPHP returns the 1-based end line of the PHP
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterPHP(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(php.GetLanguage(), phpDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterPHP returns the 1-based start line (including any
-// leading comment block) for the PHP definition whose first line is funcLine.
-func resolveStartWithTreeSitterPHP(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(php.GetLanguage(), content, funcLine)
 }
 
 // ocamlMLDefinitionTypes is the set of tree-sitter node types treated as
@@ -342,31 +206,6 @@ func isMLIFile(path string) bool {
 	return filepath.Ext(path) == ".mli"
 }
 
-// resolveEndWithTreeSitterOCaml returns the 1-based end line of the OCaml
-// implementation (.ml) definition starting at startLine (1-based).
-func resolveEndWithTreeSitterOCaml(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), ocamlMLDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterOCaml returns the 1-based start line (including any
-// leading comment block) for the OCaml (.ml) definition whose first line is funcLine.
-func resolveStartWithTreeSitterOCaml(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCaml()), content, funcLine)
-}
-
-// resolveEndWithTreeSitterOCamlInterface returns the 1-based end line of the
-// OCaml interface (.mli) definition starting at startLine (1-based).
-func resolveEndWithTreeSitterOCamlInterface(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), ocamlMLIDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterOCamlInterface returns the 1-based start line
-// (including any leading comment block) for the OCaml (.mli) definition whose
-// first line is funcLine.
-func resolveStartWithTreeSitterOCamlInterface(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(sitter.NewLanguage(ocaml.LanguageOCamlInterface()), content, funcLine)
-}
-
 // cDefinitionTypes is the set of tree-sitter node types treated as definitions
 // in C source files.
 var cDefinitionTypes = map[string]bool{
@@ -381,18 +220,6 @@ var cDefinitionTypes = map[string]bool{
 func isCFile(path string) bool {
 	ext := filepath.Ext(path)
 	return ext == ".c" || ext == ".h"
-}
-
-// resolveEndWithTreeSitterC returns the 1-based end line of the C definition
-// starting at startLine (1-based).
-func resolveEndWithTreeSitterC(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(c.GetLanguage(), cDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterC returns the 1-based start line (including any
-// leading comment block) for the C definition whose first line is funcLine.
-func resolveStartWithTreeSitterC(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(c.GetLanguage(), content, funcLine)
 }
 
 // cppDefinitionTypes is the set of tree-sitter node types treated as
@@ -415,18 +242,6 @@ var cppDefinitionTypes = map[string]bool{
 func isCppFile(path string) bool {
 	ext := filepath.Ext(path)
 	return ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".hh" || ext == ".hpp" || ext == ".hxx"
-}
-
-// resolveEndWithTreeSitterCpp returns the 1-based end line of the C++
-// definition starting at startLine (1-based).
-func resolveEndWithTreeSitterCpp(content []byte, startLine int) (int, error) {
-	return resolveEndWithTreeSitter(cpp.GetLanguage(), cppDefinitionTypes, content, startLine)
-}
-
-// resolveStartWithTreeSitterCpp returns the 1-based start line (including any
-// leading comment block) for the C++ definition whose first line is funcLine.
-func resolveStartWithTreeSitterCpp(content []byte, funcLine int) (int, error) {
-	return resolveStartWithTreeSitter(cpp.GetLanguage(), content, funcLine)
 }
 
 // luaDefinitionTypes is the set of tree-sitter node types treated as

@@ -9,6 +9,15 @@ import (
 	"strings"
 )
 
+// readtagsAvailable is set at init time to indicate whether the readtags
+// binary is found in PATH.
+var readtagsAvailable bool
+
+func init() {
+	_, err := exec.LookPath("readtags")
+	readtagsAvailable = err == nil
+}
+
 // parseLine parses a single line from a ctags file (extended format).
 // Format: tagname TAB filename TAB address ;" TAB [fields...]
 //
@@ -171,7 +180,7 @@ func lookupWithReadtags(tagsPath, tagName string) ([]Tag, error) {
 // lookupTag searches for tags by name. It uses readtags if available, otherwise
 // falls back to in-memory parsing via loadTagsFile.
 func lookupTag(tagsPath, tagName string) ([]Tag, error) {
-	if _, err := exec.LookPath("readtags"); err == nil {
+	if readtagsAvailable {
 		return lookupWithReadtags(tagsPath, tagName)
 	}
 	db, err := loadTagsFile(tagsPath)

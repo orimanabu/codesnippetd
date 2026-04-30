@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-// resolveStartEnd returns the start and end line numbers for a Tag.
+// resolveStartEnd returns the start and end line numbers for a Tag, along with
+// the file content as lines.
 // contextDir is the directory containing the tags file; it is prepended to
 // tag.Path (which is relative to the tags file) when reading source files.
 // The source file is read only when pattern matching is needed (tag.Line == 0).
@@ -17,7 +18,7 @@ import (
 // If neither source provides an end line, endLine is returned as 0.
 // When tree-sitter successfully resolves the end line, markTreeSitterUsed is
 // called on ctx so that the access log middleware can record the fact.
-func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, err error) {
+func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (startLine, endLine int, fileLines []string, err error) {
 	filePath := resolveFilePath(contextDir, tag.Path)
 
 	var lines []string
@@ -26,7 +27,7 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 	if tag.Line == 0 && tag.Pattern != "" {
 		data, err = os.ReadFile(filePath)
 		if err != nil {
-			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
+			return 0, 0, nil, fmt.Errorf("reading file %s: %w", filePath, err)
 		}
 		lines = strings.Split(string(data), "\n")
 	}
@@ -37,14 +38,14 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 		funcLine = findPatternLine(lines, tag.Pattern)
 	}
 	if funcLine <= 0 {
-		return 0, 0, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
+		return 0, 0, nil, fmt.Errorf("cannot determine start line for tag %q in %s", tag.Name, filePath)
 	}
 
 	// Ensure file is loaded so we can scan for leading comment lines.
 	if lines == nil {
 		data, err = os.ReadFile(filePath)
 		if err != nil {
-			return 0, 0, fmt.Errorf("reading file %s: %w", filePath, err)
+			return 0, 0, nil, fmt.Errorf("reading file %s: %w", filePath, err)
 		}
 		lines = strings.Split(string(data), "\n")
 	} else if data == nil {
@@ -56,44 +57,13 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 	// and is language-aware); fall back to heuristic string matching otherwise.
 	startLine = funcLine
 	if useTreeSitter {
-		var tsStart int
-		var tsErr error
-		switch {
-		case isGoFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterGo(data, funcLine)
-		case isPyFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterPython(data, funcLine)
-		case isRbFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterRuby(data, funcLine)
-		case isJavaFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterJava(data, funcLine)
-		case isCppFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterCpp(data, funcLine)
-		case isCFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterC(data, funcLine)
-		case isRustFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterRust(data, funcLine)
-		case isJSFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterJS(data, funcLine)
-		case isTSFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterTS(data, funcLine)
-		case isHSFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterHS(data, funcLine)
-		case isKtFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterKotlin(data, funcLine)
-		case isPHPFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterPHP(data, funcLine)
-		case isMLFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterOCaml(data, funcLine)
-		case isMLIFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterOCamlInterface(data, funcLine)
-		case isLuaFile(tag.Path):
-			tsStart, tsErr = resolveStartWithTreeSitterLua(data, funcLine)
-		default:
+		if entry := lookupLang(tag.Path); entry != nil {
+			tsStart, tsErr := entry.resolveStartForLang(data, funcLine)
+			if tsErr == nil && tsStart > 0 {
+				startLine = tsStart
+			}
+		} else {
 			startLine = scanLeadingComments(lines, funcLine)
-		}
-		if tsErr == nil && tsStart > 0 {
-			startLine = tsStart
 		}
 	} else {
 		startLine = scanLeadingComments(lines, funcLine)
@@ -101,69 +71,31 @@ func resolveStartEnd(ctx context.Context, tag Tag, contextDir string, useTreeSit
 
 	if endStr, ok := tag.Extra["end"]; ok {
 		if n, parseErr := strconv.Atoi(endStr); parseErr == nil {
-			return startLine, n, nil
+			return startLine, n, lines, nil
 		}
 	}
 
 	// end field absent: try tree-sitter using funcLine (the definition start, not the comment).
 	if useTreeSitter {
-		var tsEnd int
-		var tsErr error
-		switch {
-		case isGoFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterGo(data, funcLine)
-		case isPyFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterPython(data, funcLine)
-		case isRbFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterRuby(data, funcLine)
-		case isJavaFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterJava(data, funcLine)
-		case isCppFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterCpp(data, funcLine)
-		case isCFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterC(data, funcLine)
-		case isRustFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterRust(data, funcLine)
-		case isJSFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterJS(data, funcLine)
-		case isTSFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterTS(data, funcLine)
-		case isHSFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterHS(data, funcLine)
-		case isKtFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterKotlin(data, funcLine)
-		case isPHPFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterPHP(data, funcLine)
-		case isMLFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterOCaml(data, funcLine)
-		case isMLIFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterOCamlInterface(data, funcLine)
-		case isLuaFile(tag.Path):
-			tsEnd, tsErr = resolveEndWithTreeSitterLua(data, funcLine)
-		}
-		if tsErr == nil && tsEnd > 0 {
-			markTreeSitterUsed(ctx)
-			return startLine, tsEnd, nil
+		if entry := lookupLang(tag.Path); entry != nil {
+			tsEnd, tsErr := entry.resolveEndForLang(data, funcLine)
+			if tsErr == nil && tsEnd > 0 {
+				markTreeSitterUsed(ctx)
+				return startLine, tsEnd, lines, nil
+			}
 		}
 	}
 
-	return startLine, 0, nil
+	return startLine, 0, lines, nil
 }
 
 // snippetForTag resolves a Snippet from a Tag by reading the source file.
 // contextDir is the directory containing the tags file.
 func snippetForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (Snippet, error) {
-	startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
+	startLine, endLine, lines, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
 	if err != nil {
 		return Snippet{}, err
 	}
-
-	filePath := resolveFilePath(contextDir, tag.Path)
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return Snippet{}, fmt.Errorf("reading file %s: %w", filePath, err)
-	}
-	lines := strings.Split(string(data), "\n")
 
 	extractEnd := endLine
 	if extractEnd == 0 {
@@ -183,7 +115,7 @@ func snippetForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitte
 // the full file content (the file is read only when pattern matching is needed).
 // contextDir is the directory containing the tags file.
 func lineRangeForTag(ctx context.Context, tag Tag, contextDir string, useTreeSitter bool) (LineRange, error) {
-	startLine, endLine, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
+	startLine, endLine, _, err := resolveStartEnd(ctx, tag, contextDir, useTreeSitter)
 	if err != nil {
 		return LineRange{}, err
 	}

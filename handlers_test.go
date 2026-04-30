@@ -1458,3 +1458,49 @@ func TestHandler_TagsParamTildeExpansion(t *testing.T) {
 	}
 }
 
+
+func TestPipe_ConcurrentAccess(t *testing.T) {
+	srv := httptest.NewServer(newHandler(true))
+	defer srv.Close()
+
+	const numGoroutines = 10
+	const numIterations = 5
+
+	done := make(chan bool)
+
+	// Concurrent POSTs
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			for j := 0; j < numIterations; j++ {
+				data := []byte("data" + string(rune('0'+id)))
+				resp, err := http.Post(srv.URL+"/pipe", "text/plain", bytes.NewReader(data))
+				if err != nil {
+					t.Errorf("POST error: %v", err)
+					return
+				}
+				resp.Body.Close()
+			}
+			done <- true
+		}(i)
+	}
+
+	// Concurrent GETs
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			for j := 0; j < numIterations; j++ {
+				resp, err := http.Get(srv.URL + "/pipe")
+				if err != nil {
+					t.Errorf("GET error: %v", err)
+					return
+				}
+				resp.Body.Close()
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numGoroutines*2; i++ {
+		<-done
+	}
+}

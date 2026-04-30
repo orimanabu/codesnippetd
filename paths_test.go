@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http/httptest"
 	"os/user"
 	"path/filepath"
 	"testing"
@@ -136,5 +137,77 @@ func TestExpandTilde_TildeInMiddle(t *testing.T) {
 	}
 	if got != "/path/to/~/file" {
 		t.Errorf("got %q, want %q", got, "/path/to/~/file")
+	}
+}
+
+// ---- resolveFilePath tests ----
+
+func TestResolveFilePath_AbsolutePath(t *testing.T) {
+	got := resolveFilePath("/some/context/dir", "/absolute/file.go")
+	want := "/absolute/file.go"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveFilePath_RelativePath(t *testing.T) {
+	got := resolveFilePath("/project/root", "src/main.go")
+	want := "/project/root/src/main.go"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// ---- queryTagsPath tests ----
+
+func TestQueryTagsPath_NoParams(t *testing.T) {
+	req := httptest.NewRequest("GET", "/tags/foo", nil)
+	got, err := queryTagsPath(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := filepath.Join(".", "tags")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestQueryTagsPath_WithContext(t *testing.T) {
+	req := httptest.NewRequest("GET", "/tags/foo?context=sub/project", nil)
+	got, err := queryTagsPath(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := filepath.Join(".", "sub", "project", "tags")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestQueryTagsPath_WithTags(t *testing.T) {
+	req := httptest.NewRequest("GET", "/tags/foo?tags=/custom/tags", nil)
+	got, err := queryTagsPath(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "/custom/tags"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestQueryTagsPath_TildeExpansion(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/tags/foo?context=~/myproject", nil)
+	got, err := queryTagsPath(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := filepath.Join(u.HomeDir, "myproject", "tags")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

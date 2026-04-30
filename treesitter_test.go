@@ -53,7 +53,7 @@ impl RustPoint {
 
 func TestResolveEndWithTreeSitterRust_TopLevelFunction(t *testing.T) {
 	// fn greet starts at line 1, ends at line 3
-	end, err := resolveEndWithTreeSitterRust(rustSample, 1)
+	end, err := lookupLang("test.rs").resolveEndForLang(rustSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestResolveEndWithTreeSitterRust_TopLevelFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRust_SecondFunction(t *testing.T) {
 	// fn add starts at line 5, ends at line 7
-	end, err := resolveEndWithTreeSitterRust(rustSample, 5)
+	end, err := lookupLang("test.rs").resolveEndForLang(rustSample, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestResolveEndWithTreeSitterRust_SecondFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRust_Struct(t *testing.T) {
 	// struct RustPoint starts at line 9, ends at line 12
-	end, err := resolveEndWithTreeSitterRust(rustSample, 9)
+	end, err := lookupLang("test.rs").resolveEndForLang(rustSample, 9)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestResolveEndWithTreeSitterRust_Struct(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRust_ImplBlock(t *testing.T) {
 	// impl RustPoint starts at line 14, ends at line 18
-	end, err := resolveEndWithTreeSitterRust(rustSample, 14)
+	end, err := lookupLang("test.rs").resolveEndForLang(rustSample, 14)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestResolveEndWithTreeSitterRust_ImplBlock(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRust_Method(t *testing.T) {
 	// fn new inside impl starts at line 15, ends at line 17
-	end, err := resolveEndWithTreeSitterRust(rustSample, 15)
+	end, err := lookupLang("test.rs").resolveEndForLang(rustSample, 15)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestResolveEndWithTreeSitterRust_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRust_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterRust(rustSample, 4)
+	_, err := lookupLang("test.rs").resolveEndForLang(rustSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -118,7 +118,7 @@ func TestResolveEndWithTreeSitterRust_LineNotFound(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJS_FunctionDeclaration(t *testing.T) {
 	// function greet starts at line 1, ends at line 3
-	end, err := resolveEndWithTreeSitterJS(jsSample, 1)
+	end, err := lookupLang("test.js").resolveEndForLang(jsSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestResolveEndWithTreeSitterJS_FunctionDeclaration(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJS_ArrowFunction(t *testing.T) {
 	// const add = (a, b) => { ... } starts at line 5, ends at line 7
-	end, err := resolveEndWithTreeSitterJS(jsSample, 5)
+	end, err := lookupLang("test.js").resolveEndForLang(jsSample, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestResolveEndWithTreeSitterJS_ArrowFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJS_Class(t *testing.T) {
 	// class Point starts at line 9, ends at line 17
-	end, err := resolveEndWithTreeSitterJS(jsSample, 9)
+	end, err := lookupLang("test.js").resolveEndForLang(jsSample, 9)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestResolveEndWithTreeSitterJS_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJS_Method(t *testing.T) {
 	// constructor starts at line 10, ends at line 13
-	end, err := resolveEndWithTreeSitterJS(jsSample, 10)
+	end, err := lookupLang("test.js").resolveEndForLang(jsSample, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestResolveEndWithTreeSitterJS_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJS_SecondMethod(t *testing.T) {
 	// distance() starts at line 14, ends at line 16
-	end, err := resolveEndWithTreeSitterJS(jsSample, 14)
+	end, err := lookupLang("test.js").resolveEndForLang(jsSample, 14)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestResolveEndWithTreeSitterJS_SecondMethod(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJS_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterJS(jsSample, 4)
+	_, err := lookupLang("test.js").resolveEndForLang(jsSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -216,7 +216,7 @@ enum Direction {
 
 func TestResolveEndWithTreeSitterTS_FunctionDeclaration(t *testing.T) {
 	// function greet starts at line 1, ends at line 3
-	end, err := resolveEndWithTreeSitterTS(tsSample, 1)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestResolveEndWithTreeSitterTS_FunctionDeclaration(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_ArrowFunction(t *testing.T) {
 	// const add = ... starts at line 5, ends at line 7
-	end, err := resolveEndWithTreeSitterTS(tsSample, 5)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestResolveEndWithTreeSitterTS_ArrowFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_Interface(t *testing.T) {
 	// interface Shape starts at line 9, ends at line 11
-	end, err := resolveEndWithTreeSitterTS(tsSample, 9)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 9)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestResolveEndWithTreeSitterTS_Interface(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_TypeAlias(t *testing.T) {
 	// type Point = { ... }; starts at line 13, ends at line 16
-	end, err := resolveEndWithTreeSitterTS(tsSample, 13)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 13)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestResolveEndWithTreeSitterTS_TypeAlias(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_Class(t *testing.T) {
 	// class Circle starts at line 18, ends at line 23
-	end, err := resolveEndWithTreeSitterTS(tsSample, 18)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 18)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestResolveEndWithTreeSitterTS_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_Method(t *testing.T) {
 	// area() starts at line 20, ends at line 22
-	end, err := resolveEndWithTreeSitterTS(tsSample, 20)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 20)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestResolveEndWithTreeSitterTS_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_Enum(t *testing.T) {
 	// enum Direction starts at line 25, ends at line 30
-	end, err := resolveEndWithTreeSitterTS(tsSample, 25)
+	end, err := lookupLang("test.ts").resolveEndForLang(tsSample, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestResolveEndWithTreeSitterTS_Enum(t *testing.T) {
 
 func TestResolveEndWithTreeSitterTS_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterTS(tsSample, 4)
+	_, err := lookupLang("test.ts").resolveEndForLang(tsSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -335,7 +335,7 @@ enum class Direction {
 
 func TestResolveEndWithTreeSitterKotlin_FunctionMultiLine(t *testing.T) {
 	// fun greet starts at line 1, ends at line 3
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 1)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestResolveEndWithTreeSitterKotlin_FunctionMultiLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_FunctionExpressionBody(t *testing.T) {
 	// fun add ... = x + y starts at line 5, ends at line 5
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 5)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestResolveEndWithTreeSitterKotlin_FunctionExpressionBody(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_DataClass(t *testing.T) {
 	// data class Point starts at line 7, ends at line 7
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 7)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestResolveEndWithTreeSitterKotlin_DataClass(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_Class(t *testing.T) {
 	// class Circle starts at line 9, ends at line 15
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 9)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 9)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestResolveEndWithTreeSitterKotlin_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_Method(t *testing.T) {
 	// fun area inside Circle starts at line 10, ends at line 12
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 10)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestResolveEndWithTreeSitterKotlin_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_Interface(t *testing.T) {
 	// interface Shape starts at line 17, ends at line 20
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 17)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 17)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestResolveEndWithTreeSitterKotlin_Interface(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_Object(t *testing.T) {
 	// object MathUtils starts at line 22, ends at line 24
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 22)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 22)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestResolveEndWithTreeSitterKotlin_Object(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_Enum(t *testing.T) {
 	// enum class Direction starts at line 26, ends at line 28
-	end, err := resolveEndWithTreeSitterKotlin(ktSample, 26)
+	end, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 26)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestResolveEndWithTreeSitterKotlin_Enum(t *testing.T) {
 
 func TestResolveEndWithTreeSitterKotlin_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterKotlin(ktSample, 4)
+	_, err := lookupLang("Test.kt").resolveEndForLang(ktSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -470,7 +470,7 @@ trait Greetable {
 
 func TestResolveEndWithTreeSitterPHP_FunctionMultiLine(t *testing.T) {
 	// function greet starts at line 3, ends at line 5
-	end, err := resolveEndWithTreeSitterPHP(phpSample, 3)
+	end, err := lookupLang("test.php").resolveEndForLang(phpSample, 3)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestResolveEndWithTreeSitterPHP_FunctionMultiLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPHP_FunctionSingleLine(t *testing.T) {
 	// function add starts at line 7, ends at line 9
-	end, err := resolveEndWithTreeSitterPHP(phpSample, 7)
+	end, err := lookupLang("test.php").resolveEndForLang(phpSample, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestResolveEndWithTreeSitterPHP_FunctionSingleLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPHP_Class(t *testing.T) {
 	// class Point starts at line 11, ends at line 23
-	end, err := resolveEndWithTreeSitterPHP(phpSample, 11)
+	end, err := lookupLang("test.php").resolveEndForLang(phpSample, 11)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestResolveEndWithTreeSitterPHP_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPHP_Method(t *testing.T) {
 	// __construct starts at line 15, ends at line 18
-	end, err := resolveEndWithTreeSitterPHP(phpSample, 15)
+	end, err := lookupLang("test.php").resolveEndForLang(phpSample, 15)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestResolveEndWithTreeSitterPHP_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPHP_Interface(t *testing.T) {
 	// interface Shape starts at line 25, ends at line 27
-	end, err := resolveEndWithTreeSitterPHP(phpSample, 25)
+	end, err := lookupLang("test.php").resolveEndForLang(phpSample, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestResolveEndWithTreeSitterPHP_Interface(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPHP_Trait(t *testing.T) {
 	// trait Greetable starts at line 29, ends at line 33
-	end, err := resolveEndWithTreeSitterPHP(phpSample, 29)
+	end, err := lookupLang("test.php").resolveEndForLang(phpSample, 29)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestResolveEndWithTreeSitterPHP_Trait(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPHP_LineNotFound(t *testing.T) {
 	// line 2 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterPHP(phpSample, 2)
+	_, err := lookupLang("test.php").resolveEndForLang(phpSample, 2)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -593,7 +593,7 @@ end
 
 func TestResolveEndWithTreeSitterOCaml_FunctionMultiLine(t *testing.T) {
 	// let greet name = ... starts at line 1, ends at line 2
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 1)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -604,7 +604,7 @@ func TestResolveEndWithTreeSitterOCaml_FunctionMultiLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_FunctionSingleLine(t *testing.T) {
 	// let add x y = x + y starts at line 4, ends at line 4
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 4)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -615,7 +615,7 @@ func TestResolveEndWithTreeSitterOCaml_FunctionSingleLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_TypeVariant(t *testing.T) {
 	// type color starts at line 6, ends at line 6
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 6)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 6)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -626,7 +626,7 @@ func TestResolveEndWithTreeSitterOCaml_TypeVariant(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_TypeRecord(t *testing.T) {
 	// type point = { ... } starts at line 8, ends at line 11
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 8)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 8)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -637,7 +637,7 @@ func TestResolveEndWithTreeSitterOCaml_TypeRecord(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_ModuleType(t *testing.T) {
 	// module type SHAPE starts at line 13, ends at line 15
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 13)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 13)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -648,7 +648,7 @@ func TestResolveEndWithTreeSitterOCaml_ModuleType(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_Module(t *testing.T) {
 	// module Circle starts at line 17, ends at line 19
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 17)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 17)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -659,7 +659,7 @@ func TestResolveEndWithTreeSitterOCaml_Module(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_Class(t *testing.T) {
 	// class counter starts at line 21, ends at line 25
-	end, err := resolveEndWithTreeSitterOCaml(mlSample, 21)
+	end, err := lookupLang("test.ml").resolveEndForLang(mlSample, 21)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -670,7 +670,7 @@ func TestResolveEndWithTreeSitterOCaml_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCaml_LineNotFound(t *testing.T) {
 	// line 3 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterOCaml(mlSample, 3)
+	_, err := lookupLang("test.ml").resolveEndForLang(mlSample, 3)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -680,7 +680,7 @@ func TestResolveEndWithTreeSitterOCaml_LineNotFound(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCamlInterface_ValSingleLine(t *testing.T) {
 	// val greet starts at line 1, ends at line 1
-	end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 1)
+	end, err := lookupLang("test.mli").resolveEndForLang(mliSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -691,7 +691,7 @@ func TestResolveEndWithTreeSitterOCamlInterface_ValSingleLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCamlInterface_TypeRecord(t *testing.T) {
 	// type point = { ... } starts at line 7, ends at line 10
-	end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 7)
+	end, err := lookupLang("test.mli").resolveEndForLang(mliSample, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -702,7 +702,7 @@ func TestResolveEndWithTreeSitterOCamlInterface_TypeRecord(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCamlInterface_ModuleType(t *testing.T) {
 	// module type SHAPE starts at line 12, ends at line 14
-	end, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 12)
+	end, err := lookupLang("test.mli").resolveEndForLang(mliSample, 12)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -713,7 +713,7 @@ func TestResolveEndWithTreeSitterOCamlInterface_ModuleType(t *testing.T) {
 
 func TestResolveEndWithTreeSitterOCamlInterface_LineNotFound(t *testing.T) {
 	// line 2 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterOCamlInterface(mliSample, 2)
+	_, err := lookupLang("test.mli").resolveEndForLang(mliSample, 2)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -747,7 +747,7 @@ class Shape a where
 
 func TestResolveEndWithTreeSitterHS_FunctionMultiLine(t *testing.T) {
 	// greet function starts at line 2, ends at line 3
-	end, err := resolveEndWithTreeSitterHS(hsSample, 2)
+	end, err := lookupLang("test.hs").resolveEndForLang(hsSample, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -758,7 +758,7 @@ func TestResolveEndWithTreeSitterHS_FunctionMultiLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterHS_FunctionSingleLine(t *testing.T) {
 	// add function starts at line 6, ends at line 6
-	end, err := resolveEndWithTreeSitterHS(hsSample, 6)
+	end, err := lookupLang("test.hs").resolveEndForLang(hsSample, 6)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestResolveEndWithTreeSitterHS_FunctionSingleLine(t *testing.T) {
 
 func TestResolveEndWithTreeSitterHS_TypeSignature(t *testing.T) {
 	// greet type signature starts at line 1, ends at line 1
-	end, err := resolveEndWithTreeSitterHS(hsSample, 1)
+	end, err := lookupLang("test.hs").resolveEndForLang(hsSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -780,7 +780,7 @@ func TestResolveEndWithTreeSitterHS_TypeSignature(t *testing.T) {
 
 func TestResolveEndWithTreeSitterHS_DataType(t *testing.T) {
 	// data Color starts at line 8, ends at line 11
-	end, err := resolveEndWithTreeSitterHS(hsSample, 8)
+	end, err := lookupLang("test.hs").resolveEndForLang(hsSample, 8)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -791,7 +791,7 @@ func TestResolveEndWithTreeSitterHS_DataType(t *testing.T) {
 
 func TestResolveEndWithTreeSitterHS_DataTypeRecord(t *testing.T) {
 	// data Point starts at line 13, ends at line 16
-	end, err := resolveEndWithTreeSitterHS(hsSample, 13)
+	end, err := lookupLang("test.hs").resolveEndForLang(hsSample, 13)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -802,7 +802,7 @@ func TestResolveEndWithTreeSitterHS_DataTypeRecord(t *testing.T) {
 
 func TestResolveEndWithTreeSitterHS_Class(t *testing.T) {
 	// class Shape starts at line 18, ends at line 20
-	end, err := resolveEndWithTreeSitterHS(hsSample, 18)
+	end, err := lookupLang("test.hs").resolveEndForLang(hsSample, 18)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -813,7 +813,7 @@ func TestResolveEndWithTreeSitterHS_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterHS_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterHS(hsSample, 4)
+	_, err := lookupLang("test.hs").resolveEndForLang(hsSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -850,7 +850,7 @@ end
 
 func TestResolveEndWithTreeSitterRuby_Function(t *testing.T) {
 	// def greet starts at line 1, ends at line 3
-	end, err := resolveEndWithTreeSitterRuby(rbSample, 1)
+	end, err := lookupLang("test.rb").resolveEndForLang(rbSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -861,7 +861,7 @@ func TestResolveEndWithTreeSitterRuby_Function(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRuby_SecondFunction(t *testing.T) {
 	// def add starts at line 5, ends at line 7
-	end, err := resolveEndWithTreeSitterRuby(rbSample, 5)
+	end, err := lookupLang("test.rb").resolveEndForLang(rbSample, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -872,7 +872,7 @@ func TestResolveEndWithTreeSitterRuby_SecondFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRuby_Class(t *testing.T) {
 	// class Point starts at line 9, ends at line 18
-	end, err := resolveEndWithTreeSitterRuby(rbSample, 9)
+	end, err := lookupLang("test.rb").resolveEndForLang(rbSample, 9)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -883,7 +883,7 @@ func TestResolveEndWithTreeSitterRuby_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRuby_Method(t *testing.T) {
 	// def initialize starts at line 10, ends at line 13
-	end, err := resolveEndWithTreeSitterRuby(rbSample, 10)
+	end, err := lookupLang("test.rb").resolveEndForLang(rbSample, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -894,7 +894,7 @@ func TestResolveEndWithTreeSitterRuby_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRuby_SecondMethod(t *testing.T) {
 	// def distance starts at line 15, ends at line 17
-	end, err := resolveEndWithTreeSitterRuby(rbSample, 15)
+	end, err := lookupLang("test.rb").resolveEndForLang(rbSample, 15)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -905,7 +905,7 @@ func TestResolveEndWithTreeSitterRuby_SecondMethod(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRuby_Module(t *testing.T) {
 	// module Shape starts at line 20, ends at line 24
-	end, err := resolveEndWithTreeSitterRuby(rbSample, 20)
+	end, err := lookupLang("test.rb").resolveEndForLang(rbSample, 20)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -916,7 +916,7 @@ func TestResolveEndWithTreeSitterRuby_Module(t *testing.T) {
 
 func TestResolveEndWithTreeSitterRuby_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterRuby(rbSample, 4)
+	_, err := lookupLang("test.rb").resolveEndForLang(rbSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -946,7 +946,7 @@ class Shape:
 
 func TestResolveEndWithTreeSitterPython_Function(t *testing.T) {
 	// def greet starts at line 1, ends at line 2
-	end, err := resolveEndWithTreeSitterPython(pySample, 1)
+	end, err := lookupLang("test.py").resolveEndForLang(pySample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -957,7 +957,7 @@ func TestResolveEndWithTreeSitterPython_Function(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPython_SecondFunction(t *testing.T) {
 	// def add starts at line 4, ends at line 5
-	end, err := resolveEndWithTreeSitterPython(pySample, 4)
+	end, err := lookupLang("test.py").resolveEndForLang(pySample, 4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -968,7 +968,7 @@ func TestResolveEndWithTreeSitterPython_SecondFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPython_Class(t *testing.T) {
 	// class Point starts at line 7, ends at line 13 (includes all methods)
-	end, err := resolveEndWithTreeSitterPython(pySample, 7)
+	end, err := lookupLang("test.py").resolveEndForLang(pySample, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -979,7 +979,7 @@ func TestResolveEndWithTreeSitterPython_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPython_Method(t *testing.T) {
 	// def __init__ starts at line 8, ends at line 10
-	end, err := resolveEndWithTreeSitterPython(pySample, 8)
+	end, err := lookupLang("test.py").resolveEndForLang(pySample, 8)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -990,7 +990,7 @@ func TestResolveEndWithTreeSitterPython_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPython_SecondMethod(t *testing.T) {
 	// def distance starts at line 12, ends at line 13
-	end, err := resolveEndWithTreeSitterPython(pySample, 12)
+	end, err := lookupLang("test.py").resolveEndForLang(pySample, 12)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1001,7 +1001,7 @@ func TestResolveEndWithTreeSitterPython_SecondMethod(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPython_SecondClass(t *testing.T) {
 	// class Shape starts at line 15, ends at line 17
-	end, err := resolveEndWithTreeSitterPython(pySample, 15)
+	end, err := lookupLang("test.py").resolveEndForLang(pySample, 15)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1012,7 +1012,7 @@ func TestResolveEndWithTreeSitterPython_SecondClass(t *testing.T) {
 
 func TestResolveEndWithTreeSitterPython_LineNotFound(t *testing.T) {
 	// line 3 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterPython(pySample, 3)
+	_, err := lookupLang("test.py").resolveEndForLang(pySample, 3)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -1056,7 +1056,7 @@ var DefaultName = "World"
 
 func TestResolveEndWithTreeSitterGo_Function(t *testing.T) {
 	// func Greet starts at line 3, ends at line 5
-	end, err := resolveEndWithTreeSitterGo(goSample, 3)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 3)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1067,7 +1067,7 @@ func TestResolveEndWithTreeSitterGo_Function(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_SecondFunction(t *testing.T) {
 	// func Add starts at line 7, ends at line 9
-	end, err := resolveEndWithTreeSitterGo(goSample, 7)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1078,7 +1078,7 @@ func TestResolveEndWithTreeSitterGo_SecondFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_Struct(t *testing.T) {
 	// type GoPoint struct starts at line 11, ends at line 14
-	end, err := resolveEndWithTreeSitterGo(goSample, 11)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 11)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1089,7 +1089,7 @@ func TestResolveEndWithTreeSitterGo_Struct(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_SecondStruct(t *testing.T) {
 	// type GoCircle struct starts at line 16, ends at line 18
-	end, err := resolveEndWithTreeSitterGo(goSample, 16)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1100,7 +1100,7 @@ func TestResolveEndWithTreeSitterGo_SecondStruct(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_Method(t *testing.T) {
 	// func (c *GoCircle) Area starts at line 20, ends at line 22
-	end, err := resolveEndWithTreeSitterGo(goSample, 20)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 20)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1111,7 +1111,7 @@ func TestResolveEndWithTreeSitterGo_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_Interface(t *testing.T) {
 	// type GoShape interface starts at line 24, ends at line 26
-	end, err := resolveEndWithTreeSitterGo(goSample, 24)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 24)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1122,7 +1122,7 @@ func TestResolveEndWithTreeSitterGo_Interface(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_Const(t *testing.T) {
 	// const MaxItems starts at line 28, ends at line 28
-	end, err := resolveEndWithTreeSitterGo(goSample, 28)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 28)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1133,7 +1133,7 @@ func TestResolveEndWithTreeSitterGo_Const(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_Var(t *testing.T) {
 	// var DefaultName starts at line 30, ends at line 30
-	end, err := resolveEndWithTreeSitterGo(goSample, 30)
+	end, err := lookupLang("test.go").resolveEndForLang(goSample, 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1144,7 +1144,7 @@ func TestResolveEndWithTreeSitterGo_Var(t *testing.T) {
 
 func TestResolveEndWithTreeSitterGo_LineNotFound(t *testing.T) {
 	// line 2 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterGo(goSample, 2)
+	_, err := lookupLang("test.go").resolveEndForLang(goSample, 2)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -2896,7 +2896,7 @@ enum Color {
 
 func TestResolveEndWithTreeSitterJava_Class(t *testing.T) {
 	// class Greeter starts at line 1, ends at line 9
-	end, err := resolveEndWithTreeSitterJava(javaSample, 1)
+	end, err := lookupLang("Test.java").resolveEndForLang(javaSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2907,7 +2907,7 @@ func TestResolveEndWithTreeSitterJava_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJava_Method(t *testing.T) {
 	// public String greet starts at line 2, ends at line 4
-	end, err := resolveEndWithTreeSitterJava(javaSample, 2)
+	end, err := lookupLang("Test.java").resolveEndForLang(javaSample, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2918,7 +2918,7 @@ func TestResolveEndWithTreeSitterJava_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJava_SecondMethod(t *testing.T) {
 	// public int add starts at line 6, ends at line 8
-	end, err := resolveEndWithTreeSitterJava(javaSample, 6)
+	end, err := lookupLang("Test.java").resolveEndForLang(javaSample, 6)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2929,7 +2929,7 @@ func TestResolveEndWithTreeSitterJava_SecondMethod(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJava_Interface(t *testing.T) {
 	// interface Shape starts at line 11, ends at line 13
-	end, err := resolveEndWithTreeSitterJava(javaSample, 11)
+	end, err := lookupLang("Test.java").resolveEndForLang(javaSample, 11)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2940,7 +2940,7 @@ func TestResolveEndWithTreeSitterJava_Interface(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJava_InterfaceMethod(t *testing.T) {
 	// int area() is a single-line method at line 12, ends at line 12
-	end, err := resolveEndWithTreeSitterJava(javaSample, 12)
+	end, err := lookupLang("Test.java").resolveEndForLang(javaSample, 12)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2951,7 +2951,7 @@ func TestResolveEndWithTreeSitterJava_InterfaceMethod(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJava_Enum(t *testing.T) {
 	// enum Color starts at line 15, ends at line 17
-	end, err := resolveEndWithTreeSitterJava(javaSample, 15)
+	end, err := lookupLang("Test.java").resolveEndForLang(javaSample, 15)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2962,7 +2962,7 @@ func TestResolveEndWithTreeSitterJava_Enum(t *testing.T) {
 
 func TestResolveEndWithTreeSitterJava_LineNotFound(t *testing.T) {
 	// line 5 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterJava(javaSample, 5)
+	_, err := lookupLang("Test.java").resolveEndForLang(javaSample, 5)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -3205,7 +3205,7 @@ enum Color { RED, GREEN, BLUE };
 
 func TestResolveEndWithTreeSitterC_Function(t *testing.T) {
 	// char* greet starts at line 1, ends at line 3
-	end, err := resolveEndWithTreeSitterC(cSample, 1)
+	end, err := lookupLang("test.c").resolveEndForLang(cSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3216,7 +3216,7 @@ func TestResolveEndWithTreeSitterC_Function(t *testing.T) {
 
 func TestResolveEndWithTreeSitterC_SecondFunction(t *testing.T) {
 	// int add starts at line 5, ends at line 7
-	end, err := resolveEndWithTreeSitterC(cSample, 5)
+	end, err := lookupLang("test.c").resolveEndForLang(cSample, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3227,7 +3227,7 @@ func TestResolveEndWithTreeSitterC_SecondFunction(t *testing.T) {
 
 func TestResolveEndWithTreeSitterC_Struct(t *testing.T) {
 	// struct Point starts at line 9, ends at line 12
-	end, err := resolveEndWithTreeSitterC(cSample, 9)
+	end, err := lookupLang("test.c").resolveEndForLang(cSample, 9)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3238,7 +3238,7 @@ func TestResolveEndWithTreeSitterC_Struct(t *testing.T) {
 
 func TestResolveEndWithTreeSitterC_Enum(t *testing.T) {
 	// enum Color starts at line 14, ends at line 14
-	end, err := resolveEndWithTreeSitterC(cSample, 14)
+	end, err := lookupLang("test.c").resolveEndForLang(cSample, 14)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3249,7 +3249,7 @@ func TestResolveEndWithTreeSitterC_Enum(t *testing.T) {
 
 func TestResolveEndWithTreeSitterC_LineNotFound(t *testing.T) {
 	// line 4 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterC(cSample, 4)
+	_, err := lookupLang("test.c").resolveEndForLang(cSample, 4)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -3279,7 +3279,7 @@ enum class Color { Red, Green, Blue };
 
 func TestResolveEndWithTreeSitterCpp_Class(t *testing.T) {
 	// class Greeter starts at line 1, ends at line 10
-	end, err := resolveEndWithTreeSitterCpp(cppSample, 1)
+	end, err := lookupLang("test.cc").resolveEndForLang(cppSample, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3290,7 +3290,7 @@ func TestResolveEndWithTreeSitterCpp_Class(t *testing.T) {
 
 func TestResolveEndWithTreeSitterCpp_Method(t *testing.T) {
 	// std::string greet starts at line 3, ends at line 5
-	end, err := resolveEndWithTreeSitterCpp(cppSample, 3)
+	end, err := lookupLang("test.cc").resolveEndForLang(cppSample, 3)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3301,7 +3301,7 @@ func TestResolveEndWithTreeSitterCpp_Method(t *testing.T) {
 
 func TestResolveEndWithTreeSitterCpp_SecondMethod(t *testing.T) {
 	// int add starts at line 7, ends at line 9
-	end, err := resolveEndWithTreeSitterCpp(cppSample, 7)
+	end, err := lookupLang("test.cc").resolveEndForLang(cppSample, 7)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3312,7 +3312,7 @@ func TestResolveEndWithTreeSitterCpp_SecondMethod(t *testing.T) {
 
 func TestResolveEndWithTreeSitterCpp_Struct(t *testing.T) {
 	// struct Point starts at line 12, ends at line 15
-	end, err := resolveEndWithTreeSitterCpp(cppSample, 12)
+	end, err := lookupLang("test.cc").resolveEndForLang(cppSample, 12)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3323,7 +3323,7 @@ func TestResolveEndWithTreeSitterCpp_Struct(t *testing.T) {
 
 func TestResolveEndWithTreeSitterCpp_Enum(t *testing.T) {
 	// enum class Color starts at line 17, ends at line 17
-	end, err := resolveEndWithTreeSitterCpp(cppSample, 17)
+	end, err := lookupLang("test.cc").resolveEndForLang(cppSample, 17)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3334,7 +3334,7 @@ func TestResolveEndWithTreeSitterCpp_Enum(t *testing.T) {
 
 func TestResolveEndWithTreeSitterCpp_LineNotFound(t *testing.T) {
 	// line 6 is blank — no definition starts there
-	_, err := resolveEndWithTreeSitterCpp(cppSample, 6)
+	_, err := lookupLang("test.cc").resolveEndForLang(cppSample, 6)
 	if err == nil {
 		t.Fatal("expected error for blank line with no definition")
 	}
@@ -3381,6 +3381,25 @@ func TestIsCppFile(t *testing.T) {
 	for _, c := range cases {
 		if got := isCppFile(c.path); got != c.want {
 			t.Errorf("isCppFile(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsLuaFile(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"main.lua", true},
+		{"scripts/init.lua", true},
+		{"main.go", false},
+		{"app.py", false},
+		{"file.txt", false},
+		{"noextension", false},
+	}
+	for _, c := range cases {
+		if got := isLuaFile(c.path); got != c.want {
+			t.Errorf("isLuaFile(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
 }

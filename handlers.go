@@ -11,6 +11,32 @@ import (
 	"path/filepath"
 )
 
+// lookupTagResults performs tag lookup and writes standard error responses.
+// Returns the found tags, tagsPath, and true on success; or nil, "", false if
+// an error response was already written.
+func lookupTagResults(w http.ResponseWriter, r *http.Request) ([]Tag, string, bool) {
+	tagName := r.PathValue("name")
+	tagsPath, err := queryTagsPath(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return nil, "", false
+	}
+	results, err := lookupTag(tagsPath, tagName)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
+		} else {
+			http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
+		}
+		return nil, "", false
+	}
+	if len(results) == 0 {
+		http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
+		return nil, "", false
+	}
+	return results, tagsPath, true
+}
+
 // registerHandlers registers all application routes on mux.
 func registerHandlers(mux *http.ServeMux, useTreeSitter bool) {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -84,28 +110,10 @@ func registerHandlers(mux *http.ServeMux, useTreeSitter bool) {
 	})
 
 	mux.HandleFunc("GET /tags/{name}", func(w http.ResponseWriter, r *http.Request) {
-		tagName := r.PathValue("name")
-		tagsPath, err := queryTagsPath(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		results, _, ok := lookupTagResults(w, r)
+		if !ok {
 			return
 		}
-
-		results, err := lookupTag(tagsPath, tagName)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
-			} else {
-				http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
-			}
-			return
-		}
-
-		if len(results) == 0 {
-			http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
-			return
-		}
-
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(results); err != nil {
 			log.Printf("encoding response: %v", err)
@@ -113,28 +121,11 @@ func registerHandlers(mux *http.ServeMux, useTreeSitter bool) {
 	})
 
 	mux.HandleFunc("GET /snippets/{name}", func(w http.ResponseWriter, r *http.Request) {
-		tagName := r.PathValue("name")
-		tagsPath, err := queryTagsPath(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		results, tagsPath, ok := lookupTagResults(w, r)
+		if !ok {
 			return
 		}
 		contextDir := filepath.Dir(tagsPath)
-
-		results, err := lookupTag(tagsPath, tagName)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
-			} else {
-				http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
-			}
-			return
-		}
-
-		if len(results) == 0 {
-			http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
-			return
-		}
 
 		var snippets []Snippet
 		for _, tag := range results {
@@ -153,28 +144,11 @@ func registerHandlers(mux *http.ServeMux, useTreeSitter bool) {
 	})
 
 	mux.HandleFunc("GET /lines/{name}", func(w http.ResponseWriter, r *http.Request) {
-		tagName := r.PathValue("name")
-		tagsPath, err := queryTagsPath(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		results, tagsPath, ok := lookupTagResults(w, r)
+		if !ok {
 			return
 		}
 		contextDir := filepath.Dir(tagsPath)
-
-		results, err := lookupTag(tagsPath, tagName)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				http.Error(w, fmt.Sprintf("tags file not found: %s", tagsPath), http.StatusNotFound)
-			} else {
-				http.Error(w, fmt.Sprintf("readtags error: %v", err), http.StatusInternalServerError)
-			}
-			return
-		}
-
-		if len(results) == 0 {
-			http.Error(w, fmt.Sprintf("tag not found: %s", tagName), http.StatusNotFound)
-			return
-		}
 
 		var ranges []LineRange
 		for _, tag := range results {

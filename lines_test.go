@@ -2,6 +2,98 @@ package main
 
 import "testing"
 
+// ---- isCommentLine tests ----
+
+func TestIsCommentLine_GoStyleComment(t *testing.T) {
+	if !isCommentLine("// comment") {
+		t.Error("expected // to be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_PythonHash(t *testing.T) {
+	if !isCommentLine("# comment") {
+		t.Error("expected # to be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_HaskellLuaDash(t *testing.T) {
+	if !isCommentLine("-- comment") {
+		t.Error("expected -- to be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_BlockCommentStar(t *testing.T) {
+	if !isCommentLine("* continuation") {
+		t.Error("expected * to be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_BlockCommentStart(t *testing.T) {
+	if !isCommentLine("/* start") {
+		t.Error("expected /* to be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_OCamlComment(t *testing.T) {
+	if !isCommentLine("(* comment") {
+		t.Error("expected (* to be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_NotAComment(t *testing.T) {
+	if isCommentLine("regular code") {
+		t.Error("expected regular code to not be recognized as comment")
+	}
+}
+
+func TestIsCommentLine_EmptyString(t *testing.T) {
+	if isCommentLine("") {
+		t.Error("expected empty string to not be recognized as comment")
+	}
+}
+
+// ---- scanLeadingComments tests ----
+
+func TestScanLeadingComments_NoComments(t *testing.T) {
+	lines := []string{"package main", "func foo() {", "}"}
+	got := scanLeadingComments(lines, 2)
+	if got != 2 {
+		t.Errorf("got %d, want 2", got)
+	}
+}
+
+func TestScanLeadingComments_SingleComment(t *testing.T) {
+	lines := []string{"package main", "// comment", "func foo() {", "}"}
+	got := scanLeadingComments(lines, 3)
+	if got != 2 {
+		t.Errorf("got %d, want 2", got)
+	}
+}
+
+func TestScanLeadingComments_MultipleComments(t *testing.T) {
+	lines := []string{"package main", "// first", "// second", "// third", "func foo() {", "}"}
+	got := scanLeadingComments(lines, 5)
+	if got != 2 {
+		t.Errorf("got %d, want 2", got)
+	}
+}
+
+func TestScanLeadingComments_BlankLineBetween(t *testing.T) {
+	lines := []string{"package main", "// comment", "", "func foo() {", "}"}
+	got := scanLeadingComments(lines, 4)
+	if got != 4 {
+		t.Errorf("got %d, want 4 (should stop at blank line)", got)
+	}
+}
+
+func TestScanLeadingComments_AtLineOne(t *testing.T) {
+	lines := []string{"func foo() {", "}"}
+	got := scanLeadingComments(lines, 1)
+	if got != 1 {
+		t.Errorf("got %d, want 1 (cannot go below line 1)", got)
+	}
+}
+
 // ---- normalizeTagPattern tests ----
 
 func TestNormalizeTagPattern_StripsAnchors(t *testing.T) {

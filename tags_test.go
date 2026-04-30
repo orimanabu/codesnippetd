@@ -182,7 +182,10 @@ func TestLoadTagsFile_MultipleTagsSameName(t *testing.T) {
 }
 
 func TestLookupTag_FallsBackWhenReadtagsUnavailable(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+	// Temporarily disable readtags to test fallback behavior
+	originalReadtagsAvailable := readtagsAvailable
+	readtagsAvailable = false
+	t.Cleanup(func() { readtagsAvailable = originalReadtagsAvailable })
 
 	tags, err := lookupTag(filepath.Join("testdata", "tags"), "MyStruct")
 	if err != nil {
@@ -197,6 +200,11 @@ func TestLookupTag_FallsBackWhenReadtagsUnavailable(t *testing.T) {
 }
 
 func TestLookupTag_UsesReadtagsWhenAvailable(t *testing.T) {
+	// Temporarily enable readtags and install fake binary
+	originalReadtagsAvailable := readtagsAvailable
+	readtagsAvailable = true
+	t.Cleanup(func() { readtagsAvailable = originalReadtagsAvailable })
+
 	writeFakeReadtags(t, "#!/bin/sh\nprintf '%s\\n' 'SubFunc\tsub/sub.go\t/^func SubFunc() {$/;\"\tkind:function\tline:3\tlanguage:Go'\n")
 
 	tags, err := lookupTag(filepath.Join("testdata", "sub", "tags"), "SubFunc")
